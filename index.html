@@ -7,30 +7,32 @@
 <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
+  <input type="file" id="bg-picker" accept="image/*" style="display:none" />
   <div class="wrap stack">
     <h1>Bonjour, maman ✨</h1>
 
     <!-- Avatar Léo -->
-    <div class="card card-tap row row-center" id="leo-card">
+    <div class="card row" id="leo-card" style="align-items:center;cursor:pointer">
       <div class="avatar">🍼</div>
       <div class="col">
-        <div class="leo-name">Léo</div>
+        <div style="font-size:20px;font-weight:800">Léo</div>
         <div class="muted">Touchez pour voir les informations</div>
       </div>
-      <div class="chevron">›</div>
+      <div style="font-size:22px">›</div>
     </div>
 
     <!-- Botones principales -->
-    <div class="row action-row">
+    <div class="row">
       <button class="btn btn-primary" id="btn-leche">Lait ⏱️</button>
       <button class="btn btn-success" id="btn-elim">Pipi/Caca/Vomi</button>
     </div>
 
+    <div class="report-line" id="dashboard-elim"></div>
+
     <!-- Historial -->
     <div class="stack">
-      <div class="section-head">
-        <strong>Derniers enregistrements</strong>
-        <span class="badge-live">Live</span>
+      <div style="display:flex;align-items:center;gap:8px">
+        <strong>Aujourd'hui</strong>
         <span class="pill" id="count-pill">0</span>
       </div>
       <div class="list" id="history"></div>
@@ -40,9 +42,9 @@
   <!-- Modal LAIT -->
   <div class="modal" id="modal-leche" aria-hidden="true">
     <div class="sheet stack">
-      <div class="row modal-header">
-        <h2>Lait</h2>
-        <button class="btn btn-ghost btn-compact" id="close-leche">Fermer</button>
+      <div class="row" style="align-items:center;justify-content:space-between">
+        <h2 style="margin:0">Lait</h2>
+        <button class="btn btn-ghost" id="close-leche" style="width:auto;padding:8px 12px">Fermer</button>
       </div>
 
       <div class="seg">
@@ -51,36 +53,38 @@
       </div>
 
       <!-- Pecho -->
-      <div id="pane-pecho" class="stack pane pane-timer">
-        <div class="seg seg-sides">
+      <div id="pane-pecho" class="stack" style="flex-grow:1;justify-content:space-around">
+        <div class="seg" style="gap:0; margin: 0 -18px;">
           <button id="side-left" class="active">Gauche</button>
           <button id="side-right">Droite</button>
           <button id="side-both">Les deux</button>
         </div>
-        <div class="timer-shell">
+        <div style="text-align:center;padding:20px 0">
           <div class="time" id="chrono">00:00:00</div>
-          <div id="start-time-display" class="muted time-note"></div>
-          <button class="btn btn-primary" id="startStop">Démarrer</button>
+          <div id="start-time-display" class="muted" style="min-height:1.2em; margin-top:4px;"></div>
+          <button class="btn btn-primary" id="startStop" style="margin-top:16px">Démarrer</button>
         </div>
       </div>
 
       <!-- Biberón -->
-      <div id="pane-biberon" class="stack pane" style="display:none">
-        <div class="field field-spaced">
+      <div id="pane-biberon" class="stack is-hidden">
+        <div class="field" style="margin-top:20px">
           <label for="ml">Quantité (ml)</label>
           <input id="ml" class="input" type="number" inputmode="numeric" placeholder="ej. 120" />
         </div>
         <button class="btn btn-primary" id="save-biberon">Enregistrer</button>
       </div>
+
+      <div class="report-line" id="summary-feed"></div>
     </div>
   </div>
 
   <!-- Modal ELIMINACIONES -->
   <div class="modal" id="modal-elim" aria-hidden="true">
     <div class="sheet stack">
-      <div class="row modal-header">
-        <h2>Pipi / Caca / Vomi</h2>
-        <button class="btn btn-ghost btn-compact" id="close-elim">Fermer</button>
+      <div class="row" style="align-items:center;justify-content:space-between">
+        <h2 style="margin:0">Pipi / Caca / Vomi</h2>
+        <button class="btn btn-ghost" id="close-elim" style="width:auto;padding:8px 12px">Fermer</button>
       </div>
 
       <div class="stack">
@@ -97,6 +101,8 @@
           <div class="scale" data-scale="vomit"></div>
         </div>
       </div>
+
+      <div class="report-line" id="summary-elim"></div>
 
       <div class="footer">
         <button class="btn btn-ghost" id="cancel-elim">Annuler</button>

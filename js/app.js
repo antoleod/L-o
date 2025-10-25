@@ -1,28 +1,7 @@
 // ===== Hero background =====
-const heroImages = ['../img/baby1.jpg','../img/baby.jpg'];
-(async function setHeroBackground(){
-  for(const src of shuffle(heroImages)){
-    const ok = await preloadImage(src);
-    if(ok){
-      document.documentElement.style.setProperty('--hero-image', `url("${src}")`);
-      return;
-    }
-  }
-  document.documentElement.classList.add('no-hero-image');
-})();
-
-function preloadImage(src){
-  return new Promise(resolve => {
-    const img = new Image();
-    img.onload = () => resolve(true);
-    img.onerror = () => resolve(false);
-    img.src = src;
-  });
-}
-
-function shuffle(arr){
-  return [...arr].sort(()=>Math.random()-0.5);
-}
+const HERO_KEY = 'heroImage';
+const savedHero = storeGetHero();
+applyHeroBackground(savedHero);
 
 // ===== Utilities =====
 const $ = (sel, root=document) => root.querySelector(sel);
@@ -32,13 +11,20 @@ const store = {
   set(key, val){ localStorage.setItem(key, JSON.stringify(val)) }
 };
 
+const panePecho = $('#pane-pecho');
+const paneBiberon = $('#pane-biberon');
+const historyList = $('#history');
+const summaryFeedEl = $('#summary-feed');
+const summaryElimEl = $('#summary-elim');
+const dashboardElimEl = $('#dashboard-elim');
+
 // ===== State =====
 let feeds = store.get('feeds', []); // {id,dateISO,source,breastSide,durationSec,amountMl}
 let elims = store.get('elims', []); // {id,dateISO,pee,poop,vomit}
 
 // ===== History render =====
 function renderHistory(){
-  const list = $('#history');
+  const list = historyList;
   const all = [
     ...feeds.map(f=>({type:'feed', item:f})),
     ...elims.map(e=>({type:'elim', item:e}))
@@ -54,19 +40,113 @@ function renderHistory(){
     for(const row of all){
       const div = document.createElement('div');
       div.className = 'item enter';
-      const d = new Date(row.item.dateISO).toLocaleString();
+      const dateString = new Date(row.item.dateISO).toLocaleString();
+      let title = '';
       if(row.type==='feed'){
-        div.textContent = `🍼 ${d} — ` + (row.item.source==='breast' ? `Sein (${row.item.breastSide}) · ${Math.round((row.item.durationSec||0)/60)} min` : `Biberon · ${row.item.amountMl} ml`);
-      }else{
-        div.textContent = `🚼 ${d} — Pipi ${row.item.pee} · Caca ${row.item.poop} · Vomi ${row.item.vomit}`;
+        if(row.item.source==='breast'){
+          const mins = Math.round((row.item.durationSec||0)/60);
+          title = `🍼 Sein (${row.item.breastSide}) · ${mins} min`;
+        } else {
+          title = `🍼 Biberon · ${row.item.amountMl} ml`;
+        }
+      } else {
+        title = `🚼 Eliminations · P:${row.item.pee} · C:${row.item.poop} · V:${row.item.vomit}`;
       }
+      div.innerHTML = `
+        <div class="item-content">
+          <strong>${title}</strong>
+          <div class="item-meta">${dateString}</div>
+        </div>
+        <button class="item-delete" data-type="${row.type}" data-id="${row.item.id}" aria-label="Supprimer l'entrée">
+          <span>×</span>
+        </button>
+      `;
       list.appendChild(div);
       requestAnimationFrame(()=> div.classList.remove('enter'));
     }
   }
   $('#count-pill').textContent = feeds.length + elims.length;
+  updateSummaries();
 }
 renderHistory();
+
+historyList.addEventListener('click', (e)=>{
+  const btn = e.target.closest('.item-delete');
+  if(!btn) return;
+  const {type, id} = btn.dataset;
+  if(type==='feed'){
+    feeds = feeds.filter(f=>f.id !== id);
+    store.set('feeds', feeds);
+  }else if(type==='elim'){
+    elims = elims.filter(el=>el.id !== id);
+    store.set('elims', elims);
+  }
+  btn.disabled = true;
+  btn.closest('.item')?.classList.add('exiting');
+  setTimeout(renderHistory, 180);
+});
+
+function updateSummaries(){
+  const today = new Date();
+  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+  if(summaryFeedEl){
+    const todayFeeds = feeds.filter(f=> new Date(f.dateISO).getTime() >= start);
+    if(!todayFeeds.length){
+      summaryFeedEl.innerHTML = "<strong>Aujourd'hui</strong><span>Aucun enregistrement</span>";
+    }else{
+      const breast = todayFeeds.filter(f=>f.source==='breast');
+      const bottle = todayFeeds.filter(f=>f.source==='bottle');
+      const breastMinutes = Math.round(breast.reduce((sum,f)=> sum + (f.durationSec||0),0)/60);
+      const bottleMl = bottle.reduce((sum,f)=> sum + (f.amountMl||0),0);
+      summaryFeedEl.innerHTML = `
+        <strong>Aujourd'hui</strong>
+        <span>${todayFeeds.length} séances</span>
+        <span>Sein ${breastMinutes} min</span>
+        <span>Biberon ${bottleMl} ml</span>
+      `;
+    }
+  }
+  if(summaryElimEl){
+    const todayElims = elims.filter(e=> new Date(e.dateISO).getTime() >= start);
+    if(!todayElims.length){
+      summaryElimEl.innerHTML = "<strong>Aujourd'hui</strong><span>Aucune donnée</span>";
+    }else{
+      const totals = todayElims.reduce((acc, cur)=> ({
+        pee: acc.pee + (cur.pee||0),
+        poop: acc.poop + (cur.poop||0),
+        vomit: acc.vomit + (cur.vomit||0)
+      }), {pee:0, poop:0, vomit:0});
+      summaryElimEl.innerHTML = `
+        <strong>Aujourd'hui</strong>
+        <span>Pipi ${totals.pee}</span>
+        <span>Caca ${totals.poop}</span>
+        <span>Vomi ${totals.vomit}</span>
+        <span>${todayElims.length} entrées</span>
+      `;
+    }
+  }
+  if(dashboardElimEl){
+    const todayElims = elims.filter(e=> new Date(e.dateISO).getTime() >= start);
+    if(!todayElims.length){
+      dashboardElimEl.innerHTML = "<strong>Pipi / Caca / Vomi</strong><span>Aucune donnée aujourd'hui</span>";
+    }else{
+      const totals = todayElims.reduce((acc, cur)=> ({
+        pee: acc.pee + (cur.pee||0),
+        poop: acc.poop + (cur.poop||0),
+        vomit: acc.vomit + (cur.vomit||0)
+      }), {pee:0, poop:0, vomit:0});
+      const last = todayElims[0];
+      const time = new Date(last.dateISO).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+      dashboardElimEl.innerHTML = `
+        <strong>Pipi / Caca / Vomi</strong>
+        <span>P ${totals.pee}</span>
+        <span>C ${totals.poop}</span>
+        <span>V ${totals.vomit}</span>
+        <span>Dernier ${time}</span>
+      `;
+    }
+  }
+}
 
 // ===== Avatar tap (placeholder) =====
 $('#leo-card').addEventListener('click', () => {
@@ -106,8 +186,20 @@ updateChrono();
 $('#btn-leche').addEventListener('click', ()=> openModal('#modal-leche'));
 $('#close-leche').addEventListener('click', ()=> closeModal('#modal-leche'));
 
-$('#seg-pecho').addEventListener('click', ()=>{ feedMode='breast'; $('#seg-pecho').classList.add('active'); $('#seg-biberon').classList.remove('active'); $('#pane-pecho').style.display='grid'; $('#pane-biberon').style.display='none'; });
-$('#seg-biberon').addEventListener('click', ()=>{ feedMode='bottle'; $('#seg-biberon').classList.add('active'); $('#seg-pecho').classList.remove('active'); $('#pane-pecho').style.display='none'; $('#pane-biberon').style.display='grid'; });
+$('#seg-pecho').addEventListener('click', ()=>{
+  feedMode='breast';
+  $('#seg-pecho').classList.add('active');
+  $('#seg-biberon').classList.remove('active');
+  panePecho.classList.remove('is-hidden');
+  paneBiberon.classList.add('is-hidden');
+});
+$('#seg-biberon').addEventListener('click', ()=>{
+  feedMode='bottle';
+  $('#seg-biberon').classList.add('active');
+  $('#seg-pecho').classList.remove('active');
+  panePecho.classList.add('is-hidden');
+  paneBiberon.classList.remove('is-hidden');
+});
 
 $('#side-left').addEventListener('click', ()=>{ breastSide='Gauche'; $('#side-left').classList.add('active'); $('#side-right').classList.remove('active'); $('#side-both').classList.remove('active'); });
 $('#side-right').addEventListener('click', ()=>{ breastSide='Droite'; $('#side-right').classList.add('active'); $('#side-left').classList.remove('active'); $('#side-both').classList.remove('active'); });
