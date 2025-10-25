@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Registro bebé — Léo</title>
+<link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <div class="wrap stack">
+    <h1>Bonjour, maman ✨</h1>
+
+    <!-- Avatar Léo -->
+    <div class="card card-tap row row-center" id="leo-card">
+      <div class="avatar">🍼</div>
+      <div class="col">
+        <div class="leo-name">Léo</div>
+        <div class="muted">Touchez pour voir les informations</div>
+      </div>
+      <div class="chevron">›</div>
+    </div>
+
+    <!-- Botones principales -->
+    <div class="row action-row">
+      <button class="btn btn-primary" id="btn-leche">Lait ⏱️</button>
+      <button class="btn btn-success" id="btn-elim">Pipi/Caca/Vomi</button>
+    </div>
+
+    <!-- Historial -->
+    <div class="stack">
+      <div class="section-head">
+        <strong>Derniers enregistrements</strong>
+        <span class="badge-live">Live</span>
+        <span class="pill" id="count-pill">0</span>
+      </div>
+      <div class="list" id="history"></div>
+    </div>
+  </div>
+
+  <!-- Modal LAIT -->
+  <div class="modal" id="modal-leche" aria-hidden="true">
+    <div class="sheet stack">
+      <div class="row modal-header">
+        <h2>Lait</h2>
+        <button class="btn btn-ghost btn-compact" id="close-leche">Fermer</button>
+      </div>
+
+      <div class="seg">
+        <button id="seg-pecho" class="active">Sein</button>
+        <button id="seg-biberon">Biberon</button>
+      </div>
+
+      <!-- Pecho -->
+      <div id="pane-pecho" class="stack pane pane-timer">
+        <div class="seg seg-sides">
+          <button id="side-left" class="active">Gauche</button>
+          <button id="side-right">Droite</button>
+          <button id="side-both">Les deux</button>
+        </div>
+        <div class="timer-shell">
+          <div class="time" id="chrono">00:00:00</div>
+          <div id="start-time-display" class="muted time-note"></div>
+          <button class="btn btn-primary" id="startStop">Démarrer</button>
+        </div>
+      </div>
+
+      <!-- Biberón -->
+      <div id="pane-biberon" class="stack pane" style="display:none">
+        <div class="field field-spaced">
+          <label for="ml">Quantité (ml)</label>
+          <input id="ml" class="input" type="number" inputmode="numeric" placeholder="ej. 120" />
+        </div>
+        <button class="btn btn-primary" id="save-biberon">Enregistrer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal ELIMINACIONES -->
+  <div class="modal" id="modal-elim" aria-hidden="true">
+    <div class="sheet stack">
+      <div class="row modal-header">
+        <h2>Pipi / Caca / Vomi</h2>
+        <button class="btn btn-ghost btn-compact" id="close-elim">Fermer</button>
+      </div>
+
+      <div class="stack">
+        <div class="field">
+          <label>Pipi</label>
+          <div class="scale" data-scale="pee"></div>
+        </div>
+        <div class="field">
+          <label>Caca</label>
+          <div class="scale" data-scale="poop"></div>
+        </div>
+        <div class="field">
+          <label>Vomi</label>
+          <div class="scale" data-scale="vomit"></div>
+        </div>
+      </div>
+
+      <div class="footer">
+        <button class="btn btn-ghost" id="cancel-elim">Annuler</button>
+        <button class="btn btn-primary" id="save-elim">Enregistrer</button>
+      </div>
+    </div>
+  </div>
+
+<script src="js/app.js"></script>
+</body>
+</html>
