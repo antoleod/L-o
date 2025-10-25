@@ -12,13 +12,15 @@
     <h1>Bonjour, maman ✨</h1>
 
     <!-- Avatar Léo -->
-    <div class="card row" id="leo-card" style="align-items:center;cursor:pointer">
-      <div class="avatar">🍼</div>
+    <div class="card row row-center" id="leo-card">
+      <button class="avatar avatar-btn" id="avatar-btn" type="button">🍼</button>
       <div class="col">
-        <div style="font-size:20px;font-weight:800">Léo</div>
-        <div class="muted">Touchez pour voir les informations</div>
+        <button class="info-btn" id="info-btn" type="button">
+          <div class="leo-name">Léo</div>
+          <div class="muted">Touchez pour voir les informations</div>
+        </button>
       </div>
-      <div style="font-size:22px">›</div>
+      <button class="chevron-btn" id="info-chevron" type="button" aria-label="Infos Léo">›</button>
     </div>
 
     <!-- Botones principales -->
