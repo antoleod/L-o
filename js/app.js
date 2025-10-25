@@ -6,20 +6,31 @@ const store = {
     try { return JSON.parse(localStorage.getItem(key)) ?? fallback; }
     catch { return fallback; }
   },
-  set(key, val){ localStorage.setItem(key, JSON.stringify(val)); }
+  set(key, val){ localStorage.setItem(key, JSON.stringify(val)); },
+  remove(key){ localStorage.removeItem(key); }
 };
 
 // ===== Hero background =====
 const HERO_KEY = 'heroImage';
-const HERO_FALLBACKS = ['../img/baby.jpg', '../img/baby1.jpg'];
+const HERO_FALLBACKS = ['img/baby.jpg', 'img/baby1.jpg'];
 
-function normalizeHero(src){
+function isAbsolutePath(src){
+  return /^data:/.test(src) || /^https?:/.test(src) || src.startsWith('/');
+}
+
+function toDocPath(src){
   if(!src) return null;
-  if(/^data:/.test(src) || /^https?:/.test(src) || src.startsWith('/')) return src;
-  if(src.startsWith('../')) return src;
-  if(src.startsWith('./')) return `../${src.slice(2)}`;
-  if(src.startsWith('img/')) return `../${src}`;
+  if(isAbsolutePath(src)) return src;
+  if(src.startsWith('../')) return src.replace(/^\.\.\//,'');
+  if(src.startsWith('./')) return src.slice(2);
   return src;
+}
+
+function toCssPath(src){
+  if(!src) return null;
+  if(isAbsolutePath(src)) return src;
+  if(src.startsWith('../')) return src;
+  return `../${src}`;
 }
 
 function clearHero(){
@@ -27,31 +38,32 @@ function clearHero(){
   document.documentElement.classList.add('no-hero-image');
 }
 
-function applyHeroBackground(src){
-  if(src){
-    document.documentElement.style.setProperty('--hero-image', `url("${src}")`);
+function applyHeroBackground(docPath){
+  const cssPath = toCssPath(docPath);
+  if(cssPath){
+    document.documentElement.style.setProperty('--hero-image', `url("${cssPath}")`);
     document.documentElement.classList.remove('no-hero-image');
   }else{
     clearHero();
   }
 }
 
-function preloadImage(src){
+function preloadImage(docPath){
   return new Promise(resolve => {
-    if(!src){ resolve(false); return; }
+    if(!docPath){ resolve(false); return; }
     const img = new Image();
     img.onload = () => resolve(true);
     img.onerror = () => resolve(false);
-    img.src = src;
+    img.src = docPath;
   });
 }
 
 function setHeroImage(src, {persist=true, fallbackIndex=0} = {}){
-  const target = normalizeHero(src);
-  return preloadImage(target).then(ok => {
+  const docPath = toDocPath(src);
+  return preloadImage(docPath).then(ok => {
     if(ok){
-      applyHeroBackground(target);
-      if(persist) store.set(HERO_KEY, target);
+      applyHeroBackground(docPath);
+      if(persist) store.set(HERO_KEY, docPath);
       return true;
     }
     if(fallbackIndex < HERO_FALLBACKS.length){
@@ -78,10 +90,36 @@ const bgPicker = $('#bg-picker');
 const avatarBtn = $('#avatar-btn');
 const infoBtn = $('#info-btn');
 const infoChevron = $('#info-chevron');
+const addManualBtn = $('#add-manual');
+const manualModal = $('#modal-manual');
+const manualTypeButtons = $$('#manual-type button');
+const manualFeedFields = $('#manual-feed-fields');
+const manualElimFields = $('#manual-elim-fields');
+const manualSource = $('#manual-source');
+const manualBreastField = $('#manual-breast-field');
+const manualDurationField = $('#manual-duration-field');
+const manualAmountField = $('#manual-amount-field');
+const manualBreast = $('#manual-breast');
+const manualDuration = $('#manual-duration');
+const manualAmount = $('#manual-amount');
+const manualPee = $('#manual-pee');
+const manualPoop = $('#manual-poop');
+const manualVomit = $('#manual-vomit');
+const manualDatetime = $('#manual-datetime');
+const closeManualBtn = $('#close-manual');
+const cancelManualBtn = $('#cancel-manual');
+const saveManualBtn = $('#save-manual');
+const startStopBtn = $('#startStop');
+const startTimeDisplay = $('#start-time-display');
 
 // ===== State =====
 let feeds = store.get('feeds', []); // {id,dateISO,source,breastSide,durationSec,amountMl}
 let elims = store.get('elims', []); // {id,dateISO,pee,poop,vomit}
+const TIMER_KEY = 'timerState';
+let manualType = 'feed';
+let timer = 0;
+let timerStart = null;
+let timerInterval = null;
 
 // ===== History render =====
 function renderHistory(){
@@ -128,6 +166,7 @@ function renderHistory(){
   }
   $('#count-pill').textContent = feeds.length + elims.length;
   updateSummaries();
+  renderFeedHistory();
 }
 renderHistory();
 
@@ -143,7 +182,8 @@ historyList?.addEventListener('click', (e)=>{
     store.set('elims', elims);
   }
   btn.disabled = true;
-  btn.closest('.item')?.classList.add('exiting');
+  const item = btn.closest('.item');
+  item?.classList?.add('exiting');
   setTimeout(renderHistory, 180);
 });
 
@@ -231,6 +271,38 @@ function renderElimHistory(){
   }
 }
 
+function renderFeedHistory(){
+  const container = $('#feed-history');
+  if(!container) return;
+  const today = new Date();
+  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+  const todaysFeeds = feeds
+    .filter(f => new Date(f.dateISO).getTime() >= start)
+    .sort((a,b)=> a.dateISO < b.dateISO ? 1 : -1);
+
+  container.innerHTML = '';
+  if(!todaysFeeds.length){
+    const empty = document.createElement('div');
+    empty.className = 'history-empty';
+    empty.textContent = "Aucun enregistrement aujourd'hui";
+    container.appendChild(empty);
+    return;
+  }
+
+  todaysFeeds.forEach(feed => {
+    const div = document.createElement('div');
+    div.className = 'item';
+    const time = new Date(feed.dateISO).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    if(feed.source === 'breast'){
+      const mins = Math.round((feed.durationSec || 0)/60);
+      div.textContent = `🍼 ${time} — Sein (${feed.breastSide}) · ${mins} min`;
+    }else{
+      div.textContent = `🍼 ${time} — Biberon · ${feed.amountMl} ml`;
+    }
+    container.appendChild(div);
+  });
+}
+
 // ===== Modal helpers =====
 function openModal(id){
   const modal = $(id);
@@ -253,55 +325,69 @@ function closeModal(id){
 // ===== Leche modal logic =====
 let feedMode = 'breast';
 let breastSide = 'Gauche';
-let timer = 0; let interval = null;
 
 function updateChrono(){
   const h = String(Math.floor(timer / 3600)).padStart(2, '0');
   const m = String(Math.floor((timer % 3600) / 60)).padStart(2, '0');
   const s = String(timer % 60).padStart(2, '0');
-  $('#chrono').textContent = `${h}:${m}:${s}`;
+  const chrono = $('#chrono');
+  if(chrono){
+    chrono.textContent = `${h}:${m}:${s}`;
+  }
 }
 updateChrono();
 
-$('#btn-leche')?.addEventListener('click', ()=> openModal('#modal-leche'));
-$('#close-leche')?.addEventListener('click', ()=> closeModal('#modal-leche'));
+function setFeedMode(mode){
+  feedMode = mode;
+  const pecho = $('#seg-pecho');
+  const biberon = $('#seg-biberon');
+  pecho?.classList?.toggle('active', mode === 'breast');
+  biberon?.classList?.toggle('active', mode === 'bottle');
+  panePecho?.classList?.toggle('is-hidden', mode !== 'breast');
+  paneBiberon?.classList?.toggle('is-hidden', mode !== 'bottle');
+}
 
-$('#seg-pecho')?.addEventListener('click', ()=>{
-  feedMode = 'breast';
-  $('#seg-pecho').classList.add('active');
-  $('#seg-biberon').classList.remove('active');
-  panePecho?.classList.remove('is-hidden');
-  paneBiberon?.classList.add('is-hidden');
-});
+function setBreastSide(side){
+  breastSide = side;
+  $('#side-left')?.classList?.toggle('active', side === 'Gauche');
+  $('#side-right')?.classList?.toggle('active', side === 'Droite');
+  $('#side-both')?.classList?.toggle('active', side === 'Les deux');
+  if(timerStart){
+    store.set(TIMER_KEY, { start: timerStart, breastSide });
+  }
+}
 
-$('#seg-biberon')?.addEventListener('click', ()=>{
-  feedMode = 'bottle';
-  $('#seg-biberon').classList.add('active');
-  $('#seg-pecho').classList.remove('active');
-  panePecho?.classList.add('is-hidden');
-  paneBiberon?.classList.remove('is-hidden');
-});
+function tickTimer(){
+  if(!timerStart) return;
+  timer = Math.max(0, Math.floor((Date.now() - timerStart) / 1000));
+  updateChrono();
+}
 
-$('#side-left')?.addEventListener('click', ()=>{
-  breastSide = 'Gauche';
-  $('#side-left').classList.add('active');
-  $('#side-right').classList.remove('active');
-  $('#side-both').classList.remove('active');
-});
+function beginTimer(startTimestamp = Date.now(), persist = true){
+  timerStart = startTimestamp;
+  timerInterval && clearInterval(timerInterval);
+  timerInterval = setInterval(tickTimer, 1000);
+  tickTimer();
+  const label = new Date(timerStart).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+  startTimeDisplay && (startTimeDisplay.textContent = `Commencé à ${label}`);
+  startStopBtn && (startStopBtn.textContent = 'Stop');
+  if(persist){
+    store.set(TIMER_KEY, { start: timerStart, breastSide });
+  }
+}
 
-$('#side-right')?.addEventListener('click', ()=>{
-  breastSide = 'Droite';
-  $('#side-right').classList.add('active');
-  $('#side-left').classList.remove('active');
-  $('#side-both').classList.remove('active');
-});
-
-$('#side-both')?.addEventListener('click', ()=>{
-  breastSide = 'Les deux';
-  $('#side-both').classList.add('active');
-  $('#side-left').classList.remove('active');
-  $('#side-right').classList.remove('active');
-});
+function stopTimerWithoutSaving(){
+  if(timerInterval){
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+  timerStart = null;
+  store.remove(TIMER_KEY);
+  startStopBtn && (startStopBtn.textContent = 'Démarrer');
+  startTimeDisplay && (startTimeDisplay.textContent = '');
+  timer = 0;
+  updateChrono();
+}
 
 function saveFeed(entry){
   feeds.push(entry);
@@ -310,27 +396,31 @@ function saveFeed(entry){
   renderHistory();
 }
 
-$('#startStop')?.addEventListener('click', (e)=>{
-  if(interval){
-    clearInterval(interval);
-    interval = null;
+$('#btn-leche')?.addEventListener('click', ()=> openModal('#modal-leche'));
+$('#close-leche')?.addEventListener('click', ()=> closeModal('#modal-leche'));
+
+$('#seg-pecho')?.addEventListener('click', ()=> setFeedMode('breast'));
+$('#seg-biberon')?.addEventListener('click', ()=> setFeedMode('bottle'));
+
+$('#side-left')?.addEventListener('click', ()=> setBreastSide('Gauche'));
+$('#side-right')?.addEventListener('click', ()=> setBreastSide('Droite'));
+$('#side-both')?.addEventListener('click', ()=> setBreastSide('Les deux'));
+
+startStopBtn?.addEventListener('click', () => {
+  if(timerInterval){
+    const elapsed = Math.max(1, Math.floor((Date.now() - timerStart) / 1000));
+    stopTimerWithoutSaving();
     const entry = {
       id: Date.now()+'',
       dateISO: new Date().toISOString(),
       source: 'breast',
       breastSide,
-      durationSec: timer
+      durationSec: elapsed
     };
     saveFeed(entry);
-    timer = 0;
-    updateChrono();
-    $('#start-time-display').textContent = '';
-    e.target.textContent = 'Démarrer';
   }else{
-    interval = setInterval(()=>{ timer++; updateChrono(); }, 1000);
-    const startTime = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-    $('#start-time-display').textContent = `Commencé à ${startTime}`;
-    e.target.textContent = 'Stop';
+    setFeedMode('breast');
+    beginTimer(Date.now(), true);
   }
 });
 
@@ -347,6 +437,15 @@ $('#save-biberon')?.addEventListener('click', () => {
     $('#ml').value = '';
   }
 });
+
+setFeedMode('breast');
+setBreastSide(breastSide);
+const savedTimer = store.get(TIMER_KEY, null);
+if(savedTimer && savedTimer.start){
+  setFeedMode('breast');
+  if(savedTimer.breastSide) setBreastSide(savedTimer.breastSide);
+  beginTimer(savedTimer.start, false);
+}
 
 // ===== Eliminations modal logic =====
 $('#btn-elim')?.addEventListener('click', ()=>{ renderElimHistory(); openModal('#modal-elim'); });
@@ -412,4 +511,105 @@ function handleBackgroundChange(event){
     input.value = '';
   };
   reader.readAsDataURL(file);
+}
+
+// ===== Manual entry =====
+function formatDateInput(date){
+  const tzOffset = date.getTimezoneOffset() * 60000;
+  return new Date(date.getTime() - tzOffset).toISOString().slice(0,16);
+}
+
+function clamp(value, min, max){
+  return Math.min(max, Math.max(min, value));
+}
+
+function setManualType(type){
+  manualType = type;
+  manualTypeButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.type === type));
+  manualFeedFields?.classList?.toggle('is-hidden', type !== 'feed');
+  manualElimFields?.classList?.toggle('is-hidden', type !== 'elim');
+  if(type === 'feed') updateManualSourceFields();
+}
+
+function updateManualSourceFields(){
+  const source = manualSource?.value || 'breast';
+  const isBreast = source === 'breast';
+  manualBreastField?.classList?.toggle('is-hidden', !isBreast);
+  manualDurationField?.classList?.toggle('is-hidden', !isBreast);
+  manualAmountField?.classList?.toggle('is-hidden', isBreast);
+}
+
+function openManualModal(){
+  setManualType('feed');
+  manualSource && (manualSource.value = 'breast');
+  updateManualSourceFields();
+  manualBreast && (manualBreast.value = 'Gauche');
+  manualDuration && (manualDuration.value = '');
+  manualAmount && (manualAmount.value = '');
+  manualPee && (manualPee.value = 0);
+  manualPoop && (manualPoop.value = 0);
+  manualVomit && (manualVomit.value = 0);
+  manualDatetime && (manualDatetime.value = formatDateInput(new Date()));
+  openModal('#modal-manual');
+}
+
+function closeManualModal(){
+  closeModal('#modal-manual');
+}
+
+function saveManualEntry(){
+  let date = manualDatetime && manualDatetime.value ? new Date(manualDatetime.value) : new Date();
+  if(Number.isNaN(date.getTime())) date = new Date();
+  const dateISO = date.toISOString();
+
+  if(manualType === 'feed'){
+    const source = manualSource?.value || 'breast';
+    if(source === 'breast'){
+      const mins = Math.max(0, Number(manualDuration?.value || 0));
+      const durationSec = Math.round(mins * 60);
+      const entry = {
+        id: Date.now()+'',
+        dateISO,
+        source: 'breast',
+        breastSide: manualBreast?.value || 'Gauche',
+        durationSec
+      };
+      feeds.push(entry);
+      store.set('feeds', feeds);
+    }else{
+      const amountMl = Math.max(0, Number(manualAmount?.value || 0));
+      const entry = {
+        id: Date.now()+'',
+        dateISO,
+        source: 'bottle',
+        amountMl
+      };
+      feeds.push(entry);
+      store.set('feeds', feeds);
+    }
+  }else{
+    const entry = {
+      id: Date.now()+'',
+      dateISO,
+      pee: clamp(Number(manualPee?.value || 0), 0, 3),
+      poop: clamp(Number(manualPoop?.value || 0), 0, 3),
+      vomit: clamp(Number(manualVomit?.value || 0), 0, 3)
+    };
+    elims.push(entry);
+    store.set('elims', elims);
+  }
+
+  closeManualModal();
+  renderHistory();
+}
+
+addManualBtn?.addEventListener('click', openManualModal);
+closeManualBtn?.addEventListener('click', closeManualModal);
+cancelManualBtn?.addEventListener('click', closeManualModal);
+saveManualBtn?.addEventListener('click', saveManualEntry);
+manualTypeButtons.forEach(btn => btn.addEventListener('click', ()=> setManualType(btn.dataset.type)));
+manualSource?.addEventListener('change', updateManualSourceFields);
+if(manualModal){
+  setManualType('feed');
+  updateManualSourceFields();
 }

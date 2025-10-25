@@ -33,9 +33,12 @@
 
     <!-- Historial -->
     <div class="stack">
-      <div style="display:flex;align-items:center;gap:8px">
-        <strong>Aujourd'hui</strong>
-        <span class="pill" id="count-pill">0</span>
+      <div class="section-head">
+        <div style="display:flex;align-items:center;gap:8px">
+          <strong>Aujourd'hui</strong>
+          <span class="pill" id="count-pill">0</span>
+        </div>
+        <button class="btn btn-ghost btn-compact" id="add-manual" type="button">Ajouter manuel</button>
       </div>
       <div class="list" id="history"></div>
     </div>
@@ -54,30 +57,37 @@
         <button id="seg-biberon">Biberon</button>
       </div>
 
-      <!-- Pecho -->
-      <div id="pane-pecho" class="stack" style="flex-grow:1;justify-content:space-around">
-        <div class="seg" style="gap:0; margin: 0 -18px;">
-          <button id="side-left" class="active">Gauche</button>
-          <button id="side-right">Droite</button>
-          <button id="side-both">Les deux</button>
+      <div class="stack" id="feed-content">
+        <!-- Pecho -->
+        <div id="pane-pecho" class="stack" style="flex-grow:1;justify-content:space-around">
+          <div class="seg" style="gap:0; margin: 0 -18px;">
+            <button id="side-left" class="active">Gauche</button>
+            <button id="side-right">Droite</button>
+            <button id="side-both">Les deux</button>
+          </div>
+          <div style="text-align:center;padding:20px 0">
+            <div class="time" id="chrono">00:00:00</div>
+            <div id="start-time-display" class="muted" style="min-height:1.2em; margin-top:4px;"></div>
+            <button class="btn btn-primary" id="startStop" style="margin-top:16px">Démarrer</button>
+          </div>
         </div>
-        <div style="text-align:center;padding:20px 0">
-          <div class="time" id="chrono">00:00:00</div>
-          <div id="start-time-display" class="muted" style="min-height:1.2em; margin-top:4px;"></div>
-          <button class="btn btn-primary" id="startStop" style="margin-top:16px">Démarrer</button>
+
+        <!-- Biberón -->
+        <div id="pane-biberon" class="stack is-hidden">
+          <div class="field" style="margin-top:20px">
+            <label for="ml">Quantité (ml)</label>
+            <input id="ml" class="input" type="number" inputmode="numeric" placeholder="ej. 120" />
+          </div>
+          <button class="btn btn-primary" id="save-biberon">Enregistrer</button>
+        </div>
+
+        <div class="report-line" id="summary-feed"></div>
+
+        <div class="stack" id="feed-history-section">
+          <strong>Aujourd'hui</strong>
+          <div class="list" id="feed-history"></div>
         </div>
       </div>
-
-      <!-- Biberón -->
-      <div id="pane-biberon" class="stack is-hidden">
-        <div class="field" style="margin-top:20px">
-          <label for="ml">Quantité (ml)</label>
-          <input id="ml" class="input" type="number" inputmode="numeric" placeholder="ej. 120" />
-        </div>
-        <button class="btn btn-primary" id="save-biberon">Enregistrer</button>
-      </div>
-
-      <div class="report-line" id="summary-feed"></div>
     </div>
   </div>
 
@@ -109,6 +119,72 @@
       <div class="footer">
         <button class="btn btn-ghost" id="cancel-elim">Annuler</button>
         <button class="btn btn-primary" id="save-elim">Enregistrer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal MANUAL -->
+  <div class="modal" id="modal-manual" aria-hidden="true">
+    <div class="sheet stack">
+      <div class="row modal-header">
+        <h2>Nouvel enregistrement</h2>
+        <button class="btn btn-ghost btn-compact" id="close-manual" type="button">Fermer</button>
+      </div>
+
+      <div class="seg" id="manual-type">
+        <button data-type="feed" class="active" type="button">Lait</button>
+        <button data-type="elim" type="button">Pipi / Caca / Vomi</button>
+      </div>
+
+      <div class="stack" id="manual-feed-fields">
+        <div class="field">
+          <label for="manual-source">Source</label>
+          <select id="manual-source" class="input">
+            <option value="breast">Sein</option>
+            <option value="bottle">Biberon</option>
+          </select>
+        </div>
+        <div class="field" id="manual-breast-field">
+          <label for="manual-breast">Côté</label>
+          <select id="manual-breast" class="input">
+            <option value="Gauche">Gauche</option>
+            <option value="Droite">Droite</option>
+            <option value="Les deux">Les deux</option>
+          </select>
+        </div>
+        <div class="field" id="manual-duration-field">
+          <label for="manual-duration">Durée (minutes)</label>
+          <input id="manual-duration" class="input" type="number" min="0" step="1" placeholder="ex. 12" />
+        </div>
+        <div class="field is-hidden" id="manual-amount-field">
+          <label for="manual-amount">Quantité (ml)</label>
+          <input id="manual-amount" class="input" type="number" min="0" step="10" placeholder="ex. 120" />
+        </div>
+      </div>
+
+      <div class="stack is-hidden" id="manual-elim-fields">
+        <div class="field">
+          <label for="manual-pee">Pipi</label>
+          <input id="manual-pee" class="input" type="number" min="0" max="3" step="1" value="0" />
+        </div>
+        <div class="field">
+          <label for="manual-poop">Caca</label>
+          <input id="manual-poop" class="input" type="number" min="0" max="3" step="1" value="0" />
+        </div>
+        <div class="field">
+          <label for="manual-vomit">Vomi</label>
+          <input id="manual-vomit" class="input" type="number" min="0" max="3" step="1" value="0" />
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="manual-datetime">Date &amp; heure</label>
+        <input id="manual-datetime" class="input" type="datetime-local" />
+      </div>
+
+      <div class="footer">
+        <button class="btn btn-ghost" id="cancel-manual" type="button">Annuler</button>
+        <button class="btn btn-primary" id="save-manual" type="button">Enregistrer</button>
       </div>
     </div>
   </div>
