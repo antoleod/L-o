@@ -51,10 +51,7 @@ const DAY_MS = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
 const HERO_KEY = 'heroImage';
 const HERO_FALLBACKS = [
   'img/baby.jpg',
-  'img/baby1.jpg',
-  'https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=1600&q=80',
-  'https://images.unsplash.com/photo-1528747045269-390fe33c19f2?auto=format&fit=crop&w=1600&q=80',
-  'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1600&q=80'
+  'img/baby1.jpg'
 ];
 let heroRotationTimer = null;
 const HERO_ROTATION_INTERVAL_MS = 60 * 60 * 1000; // 1 hour

@@ -8,6 +8,7 @@ const PRECACHE_URLS = [
   './js/app.js',
   './js/firebase_reports.js',
   './js/remote_reports.js',
+  './js/firebase_reports.js', // Assuming this is the correct sync script
   './img/baby.jpg',
   './img/baby1.jpg'
 ];
@@ -32,10 +33,18 @@ self.addEventListener('activate', event => {
 
 self.addEventListener('fetch', event => {
   if(event.request.method !== 'GET'){
+  // Ignore non-GET requests and requests to other origins (like chrome-extension://)
+  if (
+    event.request.method !== 'GET' ||
+    !event.request.url.startsWith(self.location.origin)
+  ) {
     return;
   }
 
   if(event.request.mode === 'navigate'){
+  // For navigation requests, use a network-first strategy.
+  // This ensures the user always gets the latest HTML.
+  if (event.request.mode === 'navigate') {
     event.respondWith(
       fetch(event.request)
         .then(response => {
@@ -48,6 +57,7 @@ self.addEventListener('fetch', event => {
     return;
   }
 
+  // For other assets, use a cache-first strategy.
   event.respondWith(
     caches.match(event.request).then(cached => {
       if(cached){
