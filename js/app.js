@@ -200,11 +200,6 @@ startHeroRotation();
 const panePecho = $('#pane-pecho');
 const paneBiberon = $('#pane-biberon');
 const historyList = $('#history');
-const historyRangeBtn = $('#history-range-btn');
-const historyRangeLabelEl = $('#history-range-label');
-const historyRangeMenu = $('#history-range-menu');
-const historyRangeOptions = historyRangeMenu ? Array.from(historyRangeMenu.querySelectorAll('[data-range]')) : [];
-const countPillEl = $('#count-pill');
 const summaryFeedEl = $('#summary-feed');
 const summaryElimEl = $('#summary-elim');
 const dashboardElimEl = $('#dashboard-elim');
@@ -254,31 +249,11 @@ const summaryMedEl = $('#summary-med');
 let feeds = store.get('feeds', []); // {id,dateISO,source,breastSide,durationSec,amountMl}
 let elims = store.get('elims', []); // {id,dateISO,pee,poop,vomit}
 let meds = store.get('meds', []); // {id,dateISO,name}
-let historyRange = 'day';
-let historyRangeMenuOpen = false;
 const TIMER_KEY = 'timerState';
 let manualType = 'feed';
 let timer = 0;
 let timerStart = null;
 let timerInterval = null;
-
-const remoteClient = typeof window !== 'undefined' ? window.RemoteReports : null;
-let remoteConfig = null;
-if(typeof window !== 'undefined'){
-  if(window.REMOTE_REPORTS_CONFIG){
-    remoteConfig = window.REMOTE_REPORTS_CONFIG;
-  }else{
-    try{
-      const storedConfig = window.localStorage.getItem('remoteReportsConfig');
-      if(storedConfig){
-        remoteConfig = JSON.parse(storedConfig);
-      }
-    }catch{
-      remoteConfig = null;
-    }
-  }
-}
-let remoteEnabled = false;
 
 function cloneDataSnapshot(){
   return {
@@ -292,11 +267,11 @@ function persistAll(reason = 'Sync update'){
   store.set('feeds', feeds);
   store.set('elims', elims);
   store.set('meds', meds);
-  if(remoteEnabled && remoteClient){
+  // La sincronización con Firebase se hace a través de un listener,
+  // pero guardamos explícitamente para asegurar que los cambios se envíen.
+  if (window.FirebaseReports) {
     const payload = cloneDataSnapshot();
-    remoteClient.saveAll(payload, reason).catch(err => {
-      console.error('Remote sync failed:', err);
-    });
+    window.FirebaseReports.saveAll(payload, reason).catch(err => console.error('Firebase save failed:', err));
   }
 }
 
@@ -320,78 +295,23 @@ function replaceDataFromSnapshot(snapshot, {persistLocal = true, skipRender = fa
   }
 }
 
-function datasetHasLocalExtras(local, remote){
-  const snapshot = remote && typeof remote === 'object' ? remote : {};
-  const makeSet = (list=[]) => new Set(list.filter(Boolean).map(item => item.id));
-  const remoteFeeds = makeSet(snapshot.feeds);
-  const remoteElims = makeSet(snapshot.elims);
-  const remoteMeds = makeSet(snapshot.meds);
-  const localFeeds = (local.feeds || []).some(item => item && !remoteFeeds.has(item.id));
-  const localElims = (local.elims || []).some(item => item && !remoteElims.has(item.id));
-  const localMeds = (local.meds || []).some(item => item && !remoteMeds.has(item.id));
-  return localFeeds || localElims || localMeds;
-}
-
 // ===== History render =====
-const HISTORY_LABELS = {
-  day: "Aujourd'hui",
-  week: '7 derniers jours',
-  month: '30 derniers jours'
-};
-
-const HISTORY_EMPTY_MESSAGES = {
-  day: "Aucun enregistrement pour aujourd'hui.",
-  week: 'Aucun enregistrement sur les 7 derniers jours.',
-  month: 'Aucun enregistrement sur les 30 derniers jours.'
-};
-
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-function getHistoryRangeWindow(range){
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-  const startOfToday = todayStart.getTime();
-  const endOfToday = startOfToday + DAY_MS;
-  switch(range){
-    case 'week':
-      return {start: startOfToday - (6 * DAY_MS), end: endOfToday};
-    case 'month':
-      return {start: startOfToday - (29 * DAY_MS), end: endOfToday};
-    case 'day':
-    default:
-      return {start: startOfToday, end: endOfToday};
-  }
-}
-
-function isEntryWithinRange(dateISO, range, windowBounds){
-  if(!dateISO) return false;
-  const time = new Date(dateISO).getTime();
-  if(Number.isNaN(time)) return false;
-  const bounds = windowBounds || getHistoryRangeWindow(range);
-  const {start, end} = bounds;
-  return time >= start && time < end;
-}
-
 function renderHistory(){
   if(!historyList) return;
   const all = [
     ...feeds.map(f => ({type:'feed', item:f})),
     ...elims.map(e => ({type:'elim', item:e})),
     ...meds.map(m => ({type:'med', item:m}))
-  ].sort((a,b)=> a.item.dateISO < b.item.dateISO ? 1 : -1);
-  const rangeBounds = getHistoryRangeWindow(historyRange);
-  const filtered = all.filter(entry => isEntryWithinRange(entry.item.dateISO, historyRange, rangeBounds));
-  const limited = filtered.slice(0, 20);
+  ].sort((a,b)=> a.item.dateISO < b.item.dateISO ? 1 : -1).slice(0,10);
 
   historyList.innerHTML = '';
-  if(!limited.length){
+  if(!all.length){
     const empty = document.createElement('div');
     empty.className = 'history-empty';
-    const msg = HISTORY_EMPTY_MESSAGES[historyRange] || "Aucun enregistrement pour le moment. Ajoutez un premier suivi !";
-    empty.textContent = msg;
+    empty.textContent = "Aucun enregistrement pour le moment. Ajoutez un premier suivi !";
     historyList.appendChild(empty);
   }else{
-    for(const row of limited){
+    for(const row of all){
       const div = document.createElement('div');
       div.className = 'item enter';
       const dateString = new Date(row.item.dateISO).toLocaleString();
@@ -431,98 +351,61 @@ function renderHistory(){
       requestAnimationFrame(()=> div.classList.remove('enter'));
     }
   }
-  if(countPillEl){
-    countPillEl.textContent = String(filtered.length);
-    const label = HISTORY_LABELS[historyRange] || '';
-    countPillEl.setAttribute('title', label ? `Total visibles - ${label}` : 'Total visibles');
-  }
+  $('#count-pill').textContent = feeds.length + elims.length + meds.length;
   updateSummaries();
   renderFeedHistory();
 }
-
-function toggleHistoryRangeMenu(force){
-  const next = typeof force === 'boolean' ? force : !historyRangeMenuOpen;
-  historyRangeMenuOpen = !!next && !!historyRangeMenu && !!historyRangeBtn;
-  if(!historyRangeMenu || !historyRangeBtn) return;
-  historyRangeBtn.setAttribute('aria-expanded', historyRangeMenuOpen ? 'true' : 'false');
-  historyRangeMenu.classList.toggle('is-open', historyRangeMenuOpen);
-}
-
-function setHistoryRange(range, {silent=false} = {}){
-  if(!HISTORY_LABELS[range]){
-    range = 'day';
-  }
-  historyRange = range;
-  if(historyRangeLabelEl){
-    historyRangeLabelEl.textContent = HISTORY_LABELS[range];
-  }
-  historyRangeOptions.forEach(btn => {
-    const active = btn.dataset.range === range;
-    btn.classList.toggle('active', active);
-    btn.setAttribute('aria-checked', active ? 'true' : 'false');
-  });
-  toggleHistoryRangeMenu(false);
-  if(countPillEl){
-    const label = HISTORY_LABELS[range] || '';
-    countPillEl.setAttribute('title', label ? `Total visibles - ${label}` : 'Total visibles');
-  }
-  if(!silent){
-    renderHistory();
-  }
-}
 renderHistory();
 
-if(historyRangeBtn && historyRangeMenu){
-  historyRangeBtn.addEventListener('click', e => {
-    e.preventDefault();
-    e.stopPropagation();
-    toggleHistoryRangeMenu();
-  });
-  historyRangeMenu.addEventListener('click', e => e.stopPropagation());
-  historyRangeOptions.forEach(btn => {
-    btn.addEventListener('click', ()=>{
-      const range = btn.dataset.range || 'day';
-      setHistoryRange(range);
-    });
-  });
-  document.addEventListener('click', ()=>{
-    if(historyRangeMenuOpen){
-      toggleHistoryRangeMenu(false);
-    }
-  });
-  document.addEventListener('keydown', e =>{
-    if(e.key === 'Escape' && historyRangeMenuOpen){
-      toggleHistoryRangeMenu(false);
-      if(typeof historyRangeBtn.focus === 'function'){
-        historyRangeBtn.focus({preventScroll:true});
-      }
-    }
-  });
-  setHistoryRange(historyRange, {silent:true});
-}
-
 historyList?.addEventListener('click', (e)=>{
-  const btn = e.target.closest('.item-delete');
-  if(!btn) return;
-  const {type, id} = btn.dataset;
-  let changed = false;
-  if(type === 'feed'){
-    feeds = feeds.filter(f => f.id !== id);
-    changed = true;
-  }else if(type === 'elim'){
-    elims = elims.filter(el => el.id !== id);
-    changed = true;
-  }else if(type === 'med'){
-    meds = meds.filter(m => m.id !== id);
-    changed = true;
+
+  const editBtn = e.target.closest('.item-edit');
+
+  if(editBtn){
+
+    const {type, id} = editBtn.dataset;
+
+    if(type && id){
+
+      beginEditEntry(type, id);
+
+    }
+
+    return;
+
   }
-  if(changed){
-    persistAll('Delete entry');
+
+  const deleteBtn = e.target.closest('.item-delete');
+
+  if (deleteBtn) {
+    const securityCode = prompt("Pour supprimer, veuillez entrer le code de sécurité :");
+    if (securityCode !== '2410') {
+      if (securityCode !== null) { // No mostrar alerta si el usuario simplemente cancela
+        alert("Code incorrect. La suppression a été annulée.");
+      }
+      return; // Detener el proceso de eliminación
+    }
+
+    const {type, id} = deleteBtn.dataset;
+    let changed = false;
+
+    if (type === 'feed') {
+      feeds = feeds.filter(f => f.id !== id);
+      changed = true;
+    } else if (type === 'elim') {
+      elims = elims.filter(el => el.id !== id);
+      changed = true;
+    } else if (type === 'med') {
+      meds = meds.filter(m => m.id !== id);
+      changed = true;
+    }
+
+    if (changed) {
+      persistAll('Delete entry');
+    }
+    deleteBtn.disabled = true;
+    setTimeout(renderHistory, 180);
   }
-  btn.disabled = true;
-  const item = btn.closest('.item');
-  item?.classList?.add('exiting');
-  setTimeout(renderHistory, 180);
 });
 
 function updateMedSummary(){
@@ -1002,146 +885,372 @@ function updateManualMedFields(){
   }
 }
 
-function openManualModal(){
-  setManualType('feed');
-  manualSource && (manualSource.value = 'breast');
+function getListByType(type){
+  if(type === 'feed') return feeds;
+  if(type === 'elim') return elims;
+  if(type === 'med') return meds;
+  return null;
+}
+
+function findEntryById(type, id){
+  const list = getListByType(type);
+  if(!list) return null;
+  return list.find(item => item && item.id === id) || null;
+}
+
+function replaceEntryInList(type, entry){
+  const list = getListByType(type);
+  if(!list) return false;
+  const idx = list.findIndex(item => item && item.id === entry.id);
+  if(idx !== -1){
+    list[idx] = entry;
+    return true;
+  }
+  return false;
+}
+
+function setManualMode(isEdit){
+  manualTypeButtons.forEach(btn => {
+    if(btn){
+      btn.disabled = isEdit;
+      btn.classList.toggle('is-disabled', isEdit);
+    }
+  });
+  if(saveManualBtn){
+    saveManualBtn.textContent = isEdit ? 'Mettre à jour' : 'Enregistrer';
+  }
+  if(manualTitle){
+    manualTitle.textContent = isEdit ? 'Modifier un enregistrement' : 'Nouvel enregistrement';
+  }
+  manualModal?.classList?.toggle('is-editing', isEdit);
+}
+
+function resetManualFields(){
+  if(manualSource) manualSource.value = 'breast';
   updateManualSourceFields();
-  manualBreast && (manualBreast.value = 'Gauche');
-  manualDuration && (manualDuration.value = '');
-  manualAmount && (manualAmount.value = '');
-  manualNotes && (manualNotes.value = '');
-  manualPee && (manualPee.value = 0);
-  manualPoop && (manualPoop.value = 0);
-  manualVomit && (manualVomit.value = 0);
-  manualElimNotes && (manualElimNotes.value = '');
-  manualMedSelect && (manualMedSelect.value = 'ibufrone');
-  manualMedOtherInput && (manualMedOtherInput.value = '');
-  manualMedDose && (manualMedDose.value = '');
-  manualMedNotes && (manualMedNotes.value = '');
+  if(manualBreast) manualBreast.value = 'Gauche';
+  if(manualDuration) manualDuration.value = '';
+  if(manualAmount) manualAmount.value = '';
+  if(manualNotes) manualNotes.value = '';
+  if(manualPee) manualPee.value = 0;
+  if(manualPoop) manualPoop.value = 0;
+  if(manualVomit) manualVomit.value = 0;
+  if(manualElimNotes) manualElimNotes.value = '';
+  if(manualMedSelect) manualMedSelect.value = 'ibufrone';
+  if(manualMedOtherInput) manualMedOtherInput.value = '';
+  if(manualMedDose) manualMedDose.value = '';
+  if(manualMedNotes) manualMedNotes.value = '';
   updateManualMedFields();
-  manualDatetime && (manualDatetime.value = formatDateInput(new Date()));
+  if(manualDatetime) manualDatetime.value = formatDateInput(new Date());
+}
+
+function populateManualForm(type, entry){
+  if(!entry) return;
+  if(manualDatetime && entry.dateISO){
+    manualDatetime.value = formatDateInput(new Date(entry.dateISO));
+  }
+  if(type === 'feed'){
+    const source = entry.source === 'bottle' ? 'bottle' : 'breast';
+    if(manualSource){
+      manualSource.value = source;
+    }
+    updateManualSourceFields();
+    if(source === 'breast'){
+      if(manualBreast) manualBreast.value = entry.breastSide || 'Gauche';
+      if(manualDuration) manualDuration.value = Math.round((entry.durationSec || 0) / 60);
+      if(manualAmount) manualAmount.value = '';
+    }else{
+      if(manualAmount) manualAmount.value = entry.amountMl != null ? entry.amountMl : '';
+      if(manualDuration) manualDuration.value = '';
+    }
+    if(manualNotes) manualNotes.value = entry.notes || '';
+  }else if(type === 'elim'){
+    if(manualPee) manualPee.value = clamp(Number(entry.pee ?? 0), 0, 3);
+    if(manualPoop) manualPoop.value = clamp(Number(entry.poop ?? 0), 0, 3);
+    if(manualVomit) manualVomit.value = clamp(Number(entry.vomit ?? 0), 0, 3);
+    if(manualElimNotes) manualElimNotes.value = entry.notes || '';
+  }else if(type === 'med'){
+    let selection = entry.medKey || 'other';
+    const allowed = new Set(['ibufrone','dalfalgan','other']);
+    if(!allowed.has(selection)){
+      selection = 'other';
+    }
+    if(manualMedSelect){
+      manualMedSelect.value = selection;
+    }
+    updateManualMedFields();
+    if(selection === 'other'){
+      if(manualMedOtherInput) manualMedOtherInput.value = entry.name || '';
+    }else if(manualMedOtherInput){
+      manualMedOtherInput.value = '';
+    }
+    if(selection !== 'other' && !entry.name){
+      const labels = {ibufrone:'Ibufrone', dalfalgan:'Dalfalgan'};
+      entry.name = labels[selection];
+    }
+    if(manualMedDose) manualMedDose.value = entry.dose || '';
+    if(manualMedNotes) manualMedNotes.value = entry.notes || '';
+  }
+}
+
+function openManualModal({mode='create', type='feed', entry=null} = {}){
+  const isEdit = mode === 'edit' && entry;
+  editingEntry = isEdit && entry ? {type, id: entry.id} : null;
+  setManualMode(isEdit);
+  resetManualFields();
+  const effectiveType = isEdit && entry ? type : 'feed';
+  setManualType(effectiveType);
+  if(isEdit && entry){
+    populateManualForm(type, entry);
+  }
+  if(!isEdit && manualDatetime){
+    manualDatetime.value = formatDateInput(new Date());
+  }
   openModal('#modal-manual');
 }
-
 function closeManualModal(){
+
+  setManualMode(false);
+
+  editingEntry = null;
+
+  setManualType('feed');
+
+  resetManualFields();
+
   closeModal('#modal-manual');
+
 }
+
+
+
+function beginEditEntry(type, id){
+
+  const existing = findEntryById(type, id);
+
+  if(!existing){
+
+    console.warn('Entry not found for editing', type, id);
+
+    return;
+
+  }
+
+  const copy = JSON.parse(JSON.stringify(existing));
+
+  openManualModal({mode:'edit', type, entry: copy});
+
+}
+
+
 
 function saveManualEntry(){
+
+  const isEdit = Boolean(editingEntry);
+
+  const targetType = isEdit && editingEntry ? editingEntry.type : manualType;
+
+  manualType = targetType;
+
   let date = manualDatetime && manualDatetime.value ? new Date(manualDatetime.value) : new Date();
+
   if(Number.isNaN(date.getTime())) date = new Date();
+
   const dateISO = date.toISOString();
+
   let reason = null;
 
-  if(manualType === 'feed'){
-    const source = manualSource?.value || 'breast';
-    if(source === 'breast'){
+
+
+  if(targetType === 'feed'){
+
+    const sourceValue = (manualSource?.value || 'breast') === 'bottle' ? 'bottle' : 'breast';
+
+    const entry = {
+
+      id: isEdit && editingEntry ? editingEntry.id : Date.now()+'',
+
+      dateISO,
+
+      source: sourceValue
+
+    };
+
+    if(sourceValue === 'breast'){
+
       const mins = Math.max(0, Number(manualDuration?.value || 0));
-      const durationSec = Math.round(mins * 60);
-      const entry = {
-        id: Date.now()+'',
-        dateISO,
-        source: 'breast',
-        breastSide: manualBreast?.value || 'Gauche',
-        durationSec
-      };
-      const notes = manualNotes?.value?.trim();
-      if(notes) entry.notes = notes;
-      feeds.push(entry);
-      reason = 'Manual feed entry (breast)';
+
+      entry.durationSec = Math.round(mins * 60);
+
+      entry.breastSide = manualBreast?.value || 'Gauche';
+
     }else{
-      const amountMl = Math.max(0, Number(manualAmount?.value || 0));
-      const entry = {
-        id: Date.now()+'',
-        dateISO,
-        source: 'bottle',
-        amountMl
-      };
-      const notes = manualNotes?.value?.trim();
-      if(notes) entry.notes = notes;
-      feeds.push(entry);
-      reason = 'Manual feed entry (bottle)';
+
+      entry.amountMl = Math.max(0, Number(manualAmount?.value || 0));
+
     }
-  }else if(manualType === 'elim'){
-    const entry = {
-      id: Date.now()+'',
-      dateISO,
-      pee: clamp(Number(manualPee?.value || 0), 0, 3),
-      poop: clamp(Number(manualPoop?.value || 0), 0, 3),
-      vomit: clamp(Number(manualVomit?.value || 0), 0, 3)
-    };
-    const notes = manualElimNotes?.value?.trim();
+
+    const notes = manualNotes?.value?.trim();
+
     if(notes) entry.notes = notes;
-    elims.push(entry);
-    reason = 'Manual elimination entry';
-  }else if(manualType === 'med'){
-    const selection = manualMedSelect?.value || 'ibufrone';
-    const labels = {
-      ibufrone: 'Ibufrone',
-      dalfalgan: 'Dalfalgan',
-      other: ''
-    };
-    let name = labels[selection] || selection;
-    if(selection === 'other'){
-      name = (manualMedOtherInput?.value || '').trim();
-      if(!name){
-        alert('Veuillez indiquer le nom du medicament.');
-        manualMedOtherInput?.focus();
-        return;
+
+    if(isEdit){
+
+      if(!replaceEntryInList('feed', entry)){
+
+        feeds.push(entry);
+
       }
+
+      reason = `Edit feed entry ${entry.id}`;
+
+    }else{
+
+      feeds.push(entry);
+
+      reason = sourceValue === 'breast' ? 'Manual feed entry (breast)' : 'Manual feed entry (bottle)';
+
     }
-    const dose = (manualMedDose?.value || '').trim();
-    const notes = (manualMedNotes?.value || '').trim();
+
+  }else if(targetType === 'elim'){
+
     const entry = {
-      id: Date.now()+'',
+
+      id: isEdit && editingEntry ? editingEntry.id : Date.now()+'',
+
       dateISO,
-      name,
-      medKey: selection
+
+      pee: clamp(Number(manualPee?.value || 0), 0, 3),
+
+      poop: clamp(Number(manualPoop?.value || 0), 0, 3),
+
+      vomit: clamp(Number(manualVomit?.value || 0), 0, 3)
+
     };
-    if(dose) entry.dose = dose;
+
+    const notes = manualElimNotes?.value?.trim();
+
     if(notes) entry.notes = notes;
-    meds.push(entry);
-    reason = 'Manual medication entry';
+
+    if(isEdit){
+
+      if(!replaceEntryInList('elim', entry)){
+
+        elims.push(entry);
+
+      }
+
+      reason = `Edit elimination entry ${entry.id}`;
+
+    }else{
+
+      elims.push(entry);
+
+      reason = 'Manual elimination entry';
+
+    }
+
+  }else if(targetType === 'med'){
+
+    let selection = manualMedSelect?.value || 'ibufrone';
+
+    const labels = {ibufrone:'Ibufrone', dalfalgan:'Dalfalgan', other:''};
+
+    if(!labels[selection]) selection = 'other';
+
+    let name = labels[selection] || selection;
+
+    if(selection === 'other'){
+
+      name = (manualMedOtherInput?.value || '').trim();
+
+      if(!name){
+
+        alert('Veuillez indiquer le nom du medicament.');
+
+        manualMedOtherInput?.focus();
+
+        return;
+
+      }
+
+    }
+
+    const dose = (manualMedDose?.value || '').trim();
+
+    const notes = (manualMedNotes?.value || '').trim();
+
+    const entry = {
+
+      id: isEdit && editingEntry ? editingEntry.id : Date.now()+'',
+
+      dateISO,
+
+      name,
+
+      medKey: selection
+
+    };
+
+    if(dose) entry.dose = dose;
+
+    if(notes) entry.notes = notes;
+
+    if(isEdit){
+
+      if(!replaceEntryInList('med', entry)){
+
+        meds.push(entry);
+
+      }
+
+      reason = `Edit medication entry ${entry.id}`;
+
+    }else{
+
+      meds.push(entry);
+
+      reason = 'Manual medication entry';
+
+    }
+
+  }else{
+
+    console.warn('Unknown manual type:', targetType);
+
   }
+
+
 
   if(reason){
+
     persistAll(reason);
+
   }
+
   closeManualModal();
+
   renderHistory();
+
 }
 
-async function initRemoteSync(){
-  if(!remoteClient || !remoteConfig) return;
-  try{
-    const config = {...remoteConfig};
-    if(!config.getToken){
-      config.getToken = () => {
-        try{
-          return localStorage.getItem('gh_pat');
-        }catch{
-          return null;
-        }
-      };
-    }
-    remoteClient.configure(config);
-    const localSnapshot = cloneDataSnapshot();
-    let remoteSnapshot = await remoteClient.load();
-    if(datasetHasLocalExtras(localSnapshot, remoteSnapshot)){
-      try{
-        remoteSnapshot = await remoteClient.merge(localSnapshot, 'Merge cached updates');
-      }catch(err){
-        console.warn('Remote merge failed, continuing with remote data', err);
+
+function initFirebaseSync() {
+  if (window.firebase && window.FirebaseReports) {
+    const firebaseApp = window.firebase.app();
+    window.FirebaseReports.init(firebaseApp, 'leo-reports'); // Usamos 'leo-reports' como ID del documento
+
+    window.FirebaseReports.on((event, payload) => {
+      if (event === 'synced') {
+        console.log('Datos sincronizados desde Firebase:', payload);
+        // Reemplaza los datos locales con los de Firebase y renderiza
+        replaceDataFromSnapshot(payload, { persistLocal: true, skipRender: false });
       }
-    }
-    remoteEnabled = true;
-    replaceDataFromSnapshot(remoteSnapshot, {persistLocal:true});
-  }catch(err){
-    console.error('Remote sync initialization failed:', err);
+    });
   }
 }
 
-addManualBtn?.addEventListener('click', openManualModal);
+addManualBtn?.addEventListener('click', ()=> openManualModal({mode:'create', type:'feed'}));
 closeManualBtn?.addEventListener('click', closeManualModal);
 cancelManualBtn?.addEventListener('click', closeManualModal);
 saveManualBtn?.addEventListener('click', saveManualEntry);
@@ -1154,6 +1263,4 @@ if(manualModal){
   updateManualMedFields();
 }
 
-if(remoteClient && remoteConfig){
-  initRemoteSync();
-}
+initFirebaseSync();

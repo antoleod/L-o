@@ -42,6 +42,10 @@
             <span class="caret" aria-hidden="true">▾</span>
           </button>
           <span class="pill" id="count-pill">0</span>
+          <button class="icon-btn icon-btn-secondary" id="export-pdf" type="button" aria-label="Exporter le rapport en PDF">
+            <span class="icon-export" aria-hidden="true"></span>
+            <span class="label">Exporter</span>
+          </button>
           <div class="range-menu" id="history-range-menu" role="menu" aria-labelledby="history-range-btn">
             <button class="range-option active" type="button" data-range="day" role="menuitemradio" aria-checked="true">
               <span class="icon-calendar" aria-hidden="true"></span>
@@ -55,9 +59,18 @@
               <span class="icon-calendar" aria-hidden="true"></span>
               <span>30 derniers jours</span>
             </button>
+            <div class="range-option range-option-custom" data-range="custom" role="menuitemradio" aria-checked="false" tabindex="-1">
+              <button class="range-option-custom-trigger" type="button">
+                <span class="icon-calendar" aria-hidden="true"></span>
+                <span>Choisir une date</span>
+              </button>
+              <input class="range-date-input" id="history-range-date" type="date" aria-label="Sélectionner une date spécifique" />
+            </div>
           </div>
         </div>
-        <button class="btn btn-ghost btn-compact" id="add-manual" type="button">Ajouter manuel</button>
+        <div class="history-actions">
+          <button class="btn btn-ghost btn-compact" id="add-manual" type="button">Ajouter manuel</button>
+        </div>
       </div>
       <div class="list" id="history"></div>
     </div>
@@ -271,7 +284,26 @@
     </div>
   </div>
 
-<script src="js/remote_reports.js"></script>
-<script src="js/app.js"></script>
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+
+  <!-- Inicialización de Firebase -->
+  <script>
+    // PEGA AQUÍ EL CÓDIGO QUE COPIASTE DE LA CONSOLA DE FIREBASE.
+    // Asegúrate de que estos valores corresponden a tu proyecto 'appleo-a0ba4'.
+    const firebaseConfig = {
+      apiKey: "TU_NUEVA_API_KEY", // Reemplaza con tu API Key de appleo-a0ba4
+      authDomain: "appleo-a0ba4.firebaseapp.com", // Reemplaza con tu Auth Domain de appleo-a0ba4
+      projectId: "appleo-a0ba4", // Este es el nuevo ID de proyecto
+      storageBucket: "appleo-a0ba4.appspot.com", // Reemplaza con tu Storage Bucket de appleo-a0ba4
+      messagingSenderId: "TU_NUEVO_MESSAGING_SENDER_ID", // Reemplaza con tu Messaging Sender ID de appleo-a0ba4
+      appId: "TU_NUEVO_APP_ID" // Reemplaza con tu App ID de appleo-a0ba4
+    };
+    firebase.initializeApp(firebaseConfig);
+  </script>
+
+<script src="js/firebase_reports.js"></script>
+<script src="js/app.js"></script> 
 </body>
 </html>
