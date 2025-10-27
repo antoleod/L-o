@@ -255,6 +255,76 @@ let timer = 0;
 let timerStart = null;
 let timerInterval = null;
 
+const remoteClient = typeof window !== 'undefined' ? window.RemoteReports : null;
+let remoteConfig = null;
+if(typeof window !== 'undefined'){
+  if(window.REMOTE_REPORTS_CONFIG){
+    remoteConfig = window.REMOTE_REPORTS_CONFIG;
+  }else{
+    try{
+      const storedConfig = window.localStorage.getItem('remoteReportsConfig');
+      if(storedConfig){
+        remoteConfig = JSON.parse(storedConfig);
+      }
+    }catch{
+      remoteConfig = null;
+    }
+  }
+}
+let remoteEnabled = false;
+
+function cloneDataSnapshot(){
+  return {
+    feeds: feeds.map(f => ({...f})),
+    elims: elims.map(e => ({...e})),
+    meds: meds.map(m => ({...m}))
+  };
+}
+
+function persistAll(reason = 'Sync update'){
+  store.set('feeds', feeds);
+  store.set('elims', elims);
+  store.set('meds', meds);
+  if(remoteEnabled && remoteClient){
+    const payload = cloneDataSnapshot();
+    remoteClient.saveAll(payload, reason).catch(err => {
+      console.error('Remote sync failed:', err);
+    });
+  }
+}
+
+function replaceDataFromSnapshot(snapshot, {persistLocal = true, skipRender = false} = {}){
+  if(snapshot && typeof snapshot === 'object'){
+    feeds = Array.isArray(snapshot.feeds) ? snapshot.feeds.map(f => ({...f})) : [];
+    elims = Array.isArray(snapshot.elims) ? snapshot.elims.map(e => ({...e})) : [];
+    meds = Array.isArray(snapshot.meds) ? snapshot.meds.map(m => ({...m})) : [];
+  }else{
+    feeds = [];
+    elims = [];
+    meds = [];
+  }
+  if(persistLocal){
+    store.set('feeds', feeds);
+    store.set('elims', elims);
+    store.set('meds', meds);
+  }
+  if(!skipRender){
+    renderHistory();
+  }
+}
+
+function datasetHasLocalExtras(local, remote){
+  const snapshot = remote && typeof remote === 'object' ? remote : {};
+  const makeSet = (list=[]) => new Set(list.filter(Boolean).map(item => item.id));
+  const remoteFeeds = makeSet(snapshot.feeds);
+  const remoteElims = makeSet(snapshot.elims);
+  const remoteMeds = makeSet(snapshot.meds);
+  const localFeeds = (local.feeds || []).some(item => item && !remoteFeeds.has(item.id));
+  const localElims = (local.elims || []).some(item => item && !remoteElims.has(item.id));
+  const localMeds = (local.meds || []).some(item => item && !remoteMeds.has(item.id));
+  return localFeeds || localElims || localMeds;
+}
+
 // ===== History render =====
 function renderHistory(){
   if(!historyList) return;
@@ -321,15 +391,19 @@ historyList?.addEventListener('click', (e)=>{
   const btn = e.target.closest('.item-delete');
   if(!btn) return;
   const {type, id} = btn.dataset;
+  let changed = false;
   if(type === 'feed'){
     feeds = feeds.filter(f => f.id !== id);
-    store.set('feeds', feeds);
+    changed = true;
   }else if(type === 'elim'){
     elims = elims.filter(el => el.id !== id);
-    store.set('elims', elims);
+    changed = true;
   }else if(type === 'med'){
     meds = meds.filter(m => m.id !== id);
-    store.set('meds', meds);
+    changed = true;
+  }
+  if(changed){
+    persistAll('Delete entry');
   }
   btn.disabled = true;
   const item = btn.closest('.item');
@@ -588,7 +662,7 @@ function stopTimerWithoutSaving(){
 
 function saveFeed(entry){
   feeds.push(entry);
-  store.set('feeds', feeds);
+  persistAll('Save feed entry');
   closeModal('#modal-leche');
   renderHistory();
 }
@@ -672,7 +746,7 @@ $('#save-elim')?.addEventListener('click', ()=>{
     poop: scales.poop,
     vomit: scales.vomit
   });
-  store.set('elims', elims);
+  persistAll('Add elimination entry');
   closeModal('#modal-elim');
   renderHistory();
 });
@@ -724,7 +798,7 @@ function saveMedication(){
     name,
     medKey: selection
   });
-  store.set('meds', meds);
+  persistAll('Add medication entry');
   updateMedSummary();
   renderHistory();
   closeMedModal();
@@ -843,6 +917,7 @@ function saveManualEntry(){
   let date = manualDatetime && manualDatetime.value ? new Date(manualDatetime.value) : new Date();
   if(Number.isNaN(date.getTime())) date = new Date();
   const dateISO = date.toISOString();
+  let reason = null;
 
   if(manualType === 'feed'){
     const source = manualSource?.value || 'breast';
@@ -859,7 +934,7 @@ function saveManualEntry(){
       const notes = manualNotes?.value?.trim();
       if(notes) entry.notes = notes;
       feeds.push(entry);
-      store.set('feeds', feeds);
+      reason = 'Manual feed entry (breast)';
     }else{
       const amountMl = Math.max(0, Number(manualAmount?.value || 0));
       const entry = {
@@ -871,7 +946,7 @@ function saveManualEntry(){
       const notes = manualNotes?.value?.trim();
       if(notes) entry.notes = notes;
       feeds.push(entry);
-      store.set('feeds', feeds);
+      reason = 'Manual feed entry (bottle)';
     }
   }else if(manualType === 'elim'){
     const entry = {
@@ -884,7 +959,7 @@ function saveManualEntry(){
     const notes = manualElimNotes?.value?.trim();
     if(notes) entry.notes = notes;
     elims.push(entry);
-    store.set('elims', elims);
+    reason = 'Manual elimination entry';
   }else if(manualType === 'med'){
     const selection = manualMedSelect?.value || 'ibufrone';
     const labels = {
@@ -912,11 +987,44 @@ function saveManualEntry(){
     if(dose) entry.dose = dose;
     if(notes) entry.notes = notes;
     meds.push(entry);
-    store.set('meds', meds);
+    reason = 'Manual medication entry';
   }
 
+  if(reason){
+    persistAll(reason);
+  }
   closeManualModal();
   renderHistory();
+}
+
+async function initRemoteSync(){
+  if(!remoteClient || !remoteConfig) return;
+  try{
+    const config = {...remoteConfig};
+    if(!config.getToken){
+      config.getToken = () => {
+        try{
+          return localStorage.getItem('gh_pat');
+        }catch{
+          return null;
+        }
+      };
+    }
+    remoteClient.configure(config);
+    const localSnapshot = cloneDataSnapshot();
+    let remoteSnapshot = await remoteClient.load();
+    if(datasetHasLocalExtras(localSnapshot, remoteSnapshot)){
+      try{
+        remoteSnapshot = await remoteClient.merge(localSnapshot, 'Merge cached updates');
+      }catch(err){
+        console.warn('Remote merge failed, continuing with remote data', err);
+      }
+    }
+    remoteEnabled = true;
+    replaceDataFromSnapshot(remoteSnapshot, {persistLocal:true});
+  }catch(err){
+    console.error('Remote sync initialization failed:', err);
+  }
 }
 
 addManualBtn?.addEventListener('click', openManualModal);
@@ -930,4 +1038,8 @@ if(manualModal){
   setManualType('feed');
   updateManualSourceFields();
   updateManualMedFields();
+}
+
+if(remoteClient && remoteConfig){
+  initRemoteSync();
 }
