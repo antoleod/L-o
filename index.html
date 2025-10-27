@@ -27,6 +27,7 @@
     <div class="row">
       <button class="btn btn-primary" id="btn-leche">Lait ⏱️</button>
       <button class="btn btn-success" id="btn-elim">Pipi/Caca/Vomi</button>
+      <button class="btn btn-warning" id="btn-med">Medicaments</button>
     </div>
 
     <div class="report-line" id="dashboard-elim"></div>
@@ -123,6 +124,37 @@
     </div>
   </div>
 
+  <!-- Modal MEDICAMENTS -->
+  <div class="modal" id="modal-med" aria-hidden="true">
+    <div class="sheet stack">
+      <div class="row" style="align-items:center;justify-content:space-between">
+        <h2 style="margin:0">Medicaments</h2>
+        <button class="btn btn-ghost" id="close-med" style="width:auto;padding:8px 12px" type="button">Fermer</button>
+      </div>
+
+      <div class="stack">
+        <div class="field">
+          <label for="medication-select">Choisir un medicament</label>
+          <select id="medication-select" class="input">
+            <option value="ibufrone">Ibufrone</option>
+            <option value="dalfalgan">Dalfalgan</option>
+            <option value="other">Autres...</option>
+          </select>
+        </div>
+        <div class="field is-hidden" id="medication-other-field">
+          <label for="medication-other">Nom du medicament</label>
+          <input id="medication-other" class="input" type="text" placeholder="Nom du medicament" />
+        </div>
+        <div class="report-line" id="summary-med"></div>
+      </div>
+
+      <div class="footer">
+        <button class="btn btn-ghost" id="cancel-med" type="button">Annuler</button>
+        <button class="btn btn-primary" id="save-med" type="button">Enregistrer</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal MANUAL -->
   <div class="modal" id="modal-manual" aria-hidden="true">
     <div class="sheet stack">
@@ -134,17 +166,18 @@
       <div class="seg" id="manual-type">
         <button data-type="feed" class="active" type="button">Lait</button>
         <button data-type="elim" type="button">Pipi / Caca / Vomi</button>
+        <button data-type="med" type="button">Medicaments</button>
       </div>
 
-      <div class="stack" id="manual-feed-fields">
-        <div class="field">
+      <div class="stack form-grid" id="manual-feed-fields">
+        <div class="field span-2">
           <label for="manual-source">Source</label>
           <select id="manual-source" class="input">
             <option value="breast">Sein</option>
             <option value="bottle">Biberon</option>
           </select>
         </div>
-        <div class="field" id="manual-breast-field">
+        <div class="field">
           <label for="manual-breast">Côté</label>
           <select id="manual-breast" class="input">
             <option value="Gauche">Gauche</option>
@@ -160,9 +193,13 @@
           <label for="manual-amount">Quantité (ml)</label>
           <input id="manual-amount" class="input" type="number" min="0" step="10" placeholder="ex. 120" />
         </div>
+        <div class="field span-2">
+          <label for="manual-notes">Notes</label>
+          <textarea id="manual-notes" class="input textarea" rows="2" placeholder="Observations rapides..."></textarea>
+        </div>
       </div>
 
-      <div class="stack is-hidden" id="manual-elim-fields">
+      <div class="stack form-grid is-hidden" id="manual-elim-fields">
         <div class="field">
           <label for="manual-pee">Pipi</label>
           <input id="manual-pee" class="input" type="number" min="0" max="3" step="1" value="0" />
@@ -174,6 +211,33 @@
         <div class="field">
           <label for="manual-vomit">Vomi</label>
           <input id="manual-vomit" class="input" type="number" min="0" max="3" step="1" value="0" />
+        </div>
+        <div class="field span-2">
+          <label for="manual-elim-notes">Notes</label>
+          <textarea id="manual-elim-notes" class="input textarea" rows="2" placeholder="Textures, couleurs, etc."></textarea>
+        </div>
+      </div>
+
+      <div class="stack form-grid is-hidden" id="manual-med-fields">
+        <div class="field">
+          <label for="manual-med-select">Médicament</label>
+          <select id="manual-med-select" class="input">
+            <option value="ibufrone">Ibufrone</option>
+            <option value="dalfalgan">Dalfalgan</option>
+            <option value="other">Autres...</option>
+          </select>
+        </div>
+        <div class="field is-hidden" id="manual-med-other-field">
+          <label for="manual-med-other">Nom</label>
+          <input id="manual-med-other" class="input" type="text" placeholder="Nom du medicament" />
+        </div>
+        <div class="field">
+          <label for="manual-med-dose">Dose</label>
+          <input id="manual-med-dose" class="input" type="text" placeholder="ex. 5 ml" />
+        </div>
+        <div class="field span-2">
+          <label for="manual-med-notes">Notes</label>
+          <textarea id="manual-med-notes" class="input textarea" rows="2" placeholder="Réactions, rappel..."></textarea>
         </div>
       </div>
 

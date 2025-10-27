@@ -10,9 +10,45 @@ const store = {
   remove(key){ localStorage.removeItem(key); }
 };
 
+const FOCUSABLE_SELECTOR = [
+  'a[href]',
+  'button:not([disabled])',
+  'textarea:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])'
+].join(',');
+
+function focusFirstElement(modal){
+  const preferred = modal.querySelector('[data-modal-focus]');
+  const focusable = preferred || modal.querySelector(FOCUSABLE_SELECTOR);
+  if(focusable && typeof focusable.focus === 'function'){
+    focusable.focus({preventScroll:true});
+  }
+}
+
+function escapeHtml(value){
+  if(!value) return '';
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // ===== Hero background =====
 const HERO_KEY = 'heroImage';
-const HERO_FALLBACKS = ['img/baby.jpg', 'img/baby1.jpg'];
+const HERO_FALLBACKS = [
+  'img/baby.jpg',
+  'img/baby1.jpg',
+  'https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=1600&q=80',
+  'https://images.unsplash.com/photo-1528747045269-390fe33c19f2?auto=format&fit=crop&w=1600&q=80',
+  'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1600&q=80'
+];
+let heroRotationTimer = null;
+const HERO_ROTATION_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+const HERO_ROTATION_META_KEY = 'heroRotationMeta';
 
 function isAbsolutePath(src){
   return /^data:/.test(src) || /^https?:/.test(src) || src.startsWith('/');
@@ -75,9 +111,90 @@ function setHeroImage(src, {persist=true, fallbackIndex=0} = {}){
   });
 }
 
+function getHeroSources(){
+  const list = [...HERO_FALLBACKS];
+  const custom = store.get(HERO_KEY, null);
+  if(custom && !list.includes(custom)){
+    list.unshift(custom);
+  }
+  return list;
+}
+
+function getHeroMeta(){
+  const meta = store.get(HERO_ROTATION_META_KEY, null);
+  if(meta && typeof meta.index === 'number' && typeof meta.lastSwitch === 'number'){
+    return meta;
+  }
+  const fresh = {index:0, lastSwitch: Date.now()};
+  store.set(HERO_ROTATION_META_KEY, fresh);
+  return fresh;
+}
+
+function saveHeroMeta(meta){
+  store.set(HERO_ROTATION_META_KEY, meta);
+}
+
+function syncHeroRotation({advance=false, force=false} = {}){
+  const sources = getHeroSources();
+  if(!sources.length) return;
+  let meta = getHeroMeta();
+  const now = Date.now();
+  let index = meta.index % sources.length;
+  if(index < 0) index = (index + sources.length) % sources.length;
+
+  if(force){
+    setHeroImage(sources[index], {persist:false});
+    meta = {index, lastSwitch: now};
+    saveHeroMeta(meta);
+    return;
+  }
+
+  if(advance){
+    index = (index + 1) % sources.length;
+    meta = {index, lastSwitch: now};
+    saveHeroMeta(meta);
+    setHeroImage(sources[index], {persist:false});
+    return;
+  }
+
+  const elapsed = now - (meta.lastSwitch || 0);
+  if(elapsed >= HERO_ROTATION_INTERVAL_MS){
+    const steps = Math.max(1, Math.floor(elapsed / HERO_ROTATION_INTERVAL_MS));
+    index = (index + steps) % sources.length;
+    meta = {index, lastSwitch: now};
+    saveHeroMeta(meta);
+    setHeroImage(sources[index], {persist:false});
+    return;
+  }
+
+  const target = sources[index];
+  const currentCss = document.documentElement.style.getPropertyValue('--hero-image');
+  if(!currentCss || !currentCss.includes(target)){
+    setHeroImage(target, {persist:false});
+  }
+}
+
+function rotateHeroImage(){
+  syncHeroRotation({advance:true});
+}
+
+function stopHeroRotation(){
+  if(heroRotationTimer){
+    clearInterval(heroRotationTimer);
+    heroRotationTimer = null;
+  }
+}
+
+function startHeroRotation(){
+  stopHeroRotation();
+  syncHeroRotation();
+  heroRotationTimer = setInterval(rotateHeroImage, HERO_ROTATION_INTERVAL_MS);
+}
+
 setHeroImage(store.get(HERO_KEY, null), {persist:false}).then(ok => {
   if(!ok) setHeroImage(HERO_FALLBACKS[0], {persist:false, fallbackIndex:1});
 });
+startHeroRotation();
 
 // ===== DOM refs =====
 const panePecho = $('#pane-pecho');
@@ -102,19 +219,36 @@ const manualAmountField = $('#manual-amount-field');
 const manualBreast = $('#manual-breast');
 const manualDuration = $('#manual-duration');
 const manualAmount = $('#manual-amount');
+const manualNotes = $('#manual-notes');
 const manualPee = $('#manual-pee');
 const manualPoop = $('#manual-poop');
 const manualVomit = $('#manual-vomit');
+const manualElimNotes = $('#manual-elim-notes');
 const manualDatetime = $('#manual-datetime');
 const closeManualBtn = $('#close-manual');
 const cancelManualBtn = $('#cancel-manual');
 const saveManualBtn = $('#save-manual');
 const startStopBtn = $('#startStop');
 const startTimeDisplay = $('#start-time-display');
+const manualMedFields = $('#manual-med-fields');
+const manualMedSelect = $('#manual-med-select');
+const manualMedOtherField = $('#manual-med-other-field');
+const manualMedOtherInput = $('#manual-med-other');
+const manualMedDose = $('#manual-med-dose');
+const manualMedNotes = $('#manual-med-notes');
+const medsBtn = $('#btn-med');
+const closeMedBtn = $('#close-med');
+const cancelMedBtn = $('#cancel-med');
+const saveMedBtn = $('#save-med');
+const medSelect = $('#medication-select');
+const medOtherField = $('#medication-other-field');
+const medOtherInput = $('#medication-other');
+const summaryMedEl = $('#summary-med');
 
 // ===== State =====
 let feeds = store.get('feeds', []); // {id,dateISO,source,breastSide,durationSec,amountMl}
 let elims = store.get('elims', []); // {id,dateISO,pee,poop,vomit}
+let meds = store.get('meds', []); // {id,dateISO,name}
 const TIMER_KEY = 'timerState';
 let manualType = 'feed';
 let timer = 0;
@@ -126,7 +260,8 @@ function renderHistory(){
   if(!historyList) return;
   const all = [
     ...feeds.map(f => ({type:'feed', item:f})),
-    ...elims.map(e => ({type:'elim', item:e}))
+    ...elims.map(e => ({type:'elim', item:e})),
+    ...meds.map(m => ({type:'med', item:m}))
   ].sort((a,b)=> a.item.dateISO < b.item.dateISO ? 1 : -1).slice(0,10);
 
   historyList.innerHTML = '';
@@ -144,17 +279,29 @@ function renderHistory(){
       if(row.type === 'feed'){
         if(row.item.source === 'breast'){
           const mins = Math.round((row.item.durationSec || 0) / 60);
-          title = `🍼 Sein (${row.item.breastSide}) · ${mins} min`;
+          title = `🍼 Sein (${escapeHtml(row.item.breastSide || '')}) · ${mins} min`;
         }else{
-          title = `🍼 Biberon · ${row.item.amountMl} ml`;
+          const ml = Number(row.item.amountMl || 0);
+          title = `🍼 Biberon · ${ml} ml`;
         }
-      }else{
+      }else if(row.type === 'elim'){
         title = `🚼 Eliminations · P:${row.item.pee} · C:${row.item.poop} · V:${row.item.vomit}`;
+      }else if(row.type === 'med'){
+        const doseSuffix = row.item.dose ? ` · ${escapeHtml(row.item.dose)}` : '';
+        title = `💊 ${escapeHtml(row.item.name)}${doseSuffix}`;
+      }
+      const metaParts = [`<span class="item-meta-time">${escapeHtml(dateString)}</span>`];
+      if(row.type === 'med' && row.item.medKey){
+        const medLabel = row.item.medKey === 'other' ? 'AUTRE' : String(row.item.medKey).toUpperCase();
+        metaParts.push(`<span class="item-meta-tag">${escapeHtml(medLabel)}</span>`);
+      }
+      if(row.item.notes){
+        metaParts.push(`<span class="item-note">${escapeHtml(row.item.notes)}</span>`);
       }
       div.innerHTML = `
         <div class="item-content">
           <strong>${title}</strong>
-          <div class="item-meta">${dateString}</div>
+          <div class="item-meta">${metaParts.join('')}</div>
         </div>
         <button class="item-delete" data-type="${row.type}" data-id="${row.item.id}" aria-label="Supprimer l'entrée">
           <span>×</span>
@@ -164,7 +311,7 @@ function renderHistory(){
       requestAnimationFrame(()=> div.classList.remove('enter'));
     }
   }
-  $('#count-pill').textContent = feeds.length + elims.length;
+  $('#count-pill').textContent = feeds.length + elims.length + meds.length;
   updateSummaries();
   renderFeedHistory();
 }
@@ -180,12 +327,38 @@ historyList?.addEventListener('click', (e)=>{
   }else if(type === 'elim'){
     elims = elims.filter(el => el.id !== id);
     store.set('elims', elims);
+  }else if(type === 'med'){
+    meds = meds.filter(m => m.id !== id);
+    store.set('meds', meds);
   }
   btn.disabled = true;
   const item = btn.closest('.item');
   item?.classList?.add('exiting');
   setTimeout(renderHistory, 180);
 });
+
+function updateMedSummary(){
+  if(!summaryMedEl) return;
+  const nowString = new Date().toLocaleString();
+  if(!meds.length){
+    summaryMedEl.innerHTML = `<strong>Derniere prise</strong><span>Aucun medicament enregistre</span><span>Nouvelle prise ${escapeHtml(nowString)}</span>`;
+    return;
+  }
+  const latest = meds.reduce((acc, cur)=> acc && acc.dateISO > cur.dateISO ? acc : cur, meds[0]);
+  const dateString = new Date(latest.dateISO).toLocaleString();
+  const parts = [
+    '<strong>Derniere prise</strong>',
+    `<span>${escapeHtml(latest.name)} - ${escapeHtml(dateString)}</span>`
+  ];
+  if(latest.dose){
+    parts.push(`<span>Dose ${escapeHtml(latest.dose)}</span>`);
+  }
+  if(latest.notes){
+    parts.push(`<span>Note ${escapeHtml(latest.notes)}</span>`);
+  }
+  parts.push(`<span>Nouvelle prise ${escapeHtml(nowString)}</span>`);
+  summaryMedEl.innerHTML = parts.join('');
+}
 
 function updateSummaries(){
   const today = new Date();
@@ -242,6 +415,7 @@ function updateSummaries(){
       }
     }
   }
+  updateMedSummary();
 }
 
 function renderElimHistory(){
@@ -293,12 +467,19 @@ function renderFeedHistory(){
     const div = document.createElement('div');
     div.className = 'item';
     const time = new Date(feed.dateISO).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    let line = '';
     if(feed.source === 'breast'){
       const mins = Math.round((feed.durationSec || 0)/60);
-      div.textContent = `🍼 ${time} — Sein (${feed.breastSide}) · ${mins} min`;
+      line = `🍼 ${escapeHtml(time)} — Sein (${escapeHtml(feed.breastSide || '')}) · ${mins} min`;
     }else{
-      div.textContent = `🍼 ${time} — Biberon · ${feed.amountMl} ml`;
+      const ml = Number(feed.amountMl || 0);
+      line = `🍼 ${escapeHtml(time)} — Biberon · ${ml} ml`;
     }
+    let html = `<div class="feed-history-line">${line}</div>`;
+    if(feed.notes){
+      html += `<div class="item-note">${escapeHtml(feed.notes)}</div>`;
+    }
+    div.innerHTML = html;
     container.appendChild(div);
   });
 }
@@ -307,19 +488,35 @@ function renderFeedHistory(){
 function openModal(id){
   const modal = $(id);
   if(!modal) return;
+  modal.__prevFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  modal.removeAttribute('inert');
   modal.classList.add('open');
   modal.setAttribute('aria-hidden','false');
   document.body.classList.add('modal-open');
+  focusFirstElement(modal);
 }
 
 function closeModal(id){
   const modal = $(id);
   if(!modal) return;
+  const active = document.activeElement;
+  if(active && modal.contains(active) && typeof active.blur === 'function'){
+    active.blur();
+  }
   modal.classList.remove('open');
   modal.setAttribute('aria-hidden','true');
+  modal.setAttribute('inert','');
   if(!document.querySelector('.modal.open')){
     document.body.classList.remove('modal-open');
   }
+  const prev = modal.__prevFocus;
+  if(prev && typeof prev.focus === 'function'){
+    prev.focus({preventScroll:true});
+  }else if(document.body){
+    if(!document.body.hasAttribute('tabindex')) document.body.setAttribute('tabindex','-1');
+    document.body.focus({preventScroll:true});
+  }
+  modal.__prevFocus = null;
 }
 
 // ===== Leche modal logic =====
@@ -480,6 +677,66 @@ $('#save-elim')?.addEventListener('click', ()=>{
   renderHistory();
 });
 
+// ===== Medications modal logic =====
+function updateMedOtherField(){
+  const isOther = medSelect?.value === 'other';
+  medOtherField?.classList?.toggle('is-hidden', !isOther);
+  if(!isOther && medOtherInput){
+    medOtherInput.value = '';
+  }
+}
+
+function resetMedForm(){
+  if(medSelect) medSelect.value = 'ibufrone';
+  updateMedOtherField();
+  if(medOtherInput) medOtherInput.value = '';
+}
+
+function openMedModal(){
+  resetMedForm();
+  updateMedSummary();
+  openModal('#modal-med');
+}
+
+function closeMedModal(){
+  closeModal('#modal-med');
+}
+
+function saveMedication(){
+  if(!medSelect) return;
+  const selection = medSelect.value || 'ibufrone';
+  const labels = {
+    ibufrone: 'Ibufrone',
+    dalfalgan: 'Dalfalgan'
+  };
+  let name = labels[selection] || selection;
+  if(selection === 'other'){
+    name = (medOtherInput?.value || '').trim();
+    if(!name){
+      alert('Veuillez indiquer le nom du medicament.');
+      medOtherInput?.focus();
+      return;
+    }
+  }
+  meds.push({
+    id: Date.now()+'',
+    dateISO: new Date().toISOString(),
+    name,
+    medKey: selection
+  });
+  store.set('meds', meds);
+  updateMedSummary();
+  renderHistory();
+  closeMedModal();
+}
+
+medsBtn?.addEventListener('click', openMedModal);
+closeMedBtn?.addEventListener('click', closeMedModal);
+cancelMedBtn?.addEventListener('click', closeMedModal);
+saveMedBtn?.addEventListener('click', saveMedication);
+medSelect?.addEventListener('change', updateMedOtherField);
+updateMedOtherField();
+
 // ===== Avatar & info actions =====
 if(bgPicker){
   bgPicker.addEventListener('change', handleBackgroundChange);
@@ -506,7 +763,12 @@ function handleBackgroundChange(event){
   reader.onload = () => {
     const dataUrl = reader.result;
     if(typeof dataUrl === 'string'){
-      setHeroImage(dataUrl);
+      setHeroImage(dataUrl).then(ok => {
+        if(ok){
+          saveHeroMeta({index:0, lastSwitch: Date.now()});
+          startHeroRotation();
+        }
+      });
     }
     input.value = '';
   };
@@ -528,7 +790,9 @@ function setManualType(type){
   manualTypeButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.type === type));
   manualFeedFields?.classList?.toggle('is-hidden', type !== 'feed');
   manualElimFields?.classList?.toggle('is-hidden', type !== 'elim');
+  manualMedFields?.classList?.toggle('is-hidden', type !== 'med');
   if(type === 'feed') updateManualSourceFields();
+  if(type === 'med') updateManualMedFields();
 }
 
 function updateManualSourceFields(){
@@ -539,6 +803,17 @@ function updateManualSourceFields(){
   manualAmountField?.classList?.toggle('is-hidden', isBreast);
 }
 
+function updateManualMedFields(){
+  const isOther = manualMedSelect?.value === 'other';
+  manualMedOtherField?.classList?.toggle('is-hidden', !isOther);
+  if(!isOther && manualMedOtherInput){
+    manualMedOtherInput.value = '';
+  }
+  if(isOther){
+    requestAnimationFrame(() => manualMedOtherInput?.focus());
+  }
+}
+
 function openManualModal(){
   setManualType('feed');
   manualSource && (manualSource.value = 'breast');
@@ -546,9 +821,16 @@ function openManualModal(){
   manualBreast && (manualBreast.value = 'Gauche');
   manualDuration && (manualDuration.value = '');
   manualAmount && (manualAmount.value = '');
+  manualNotes && (manualNotes.value = '');
   manualPee && (manualPee.value = 0);
   manualPoop && (manualPoop.value = 0);
   manualVomit && (manualVomit.value = 0);
+  manualElimNotes && (manualElimNotes.value = '');
+  manualMedSelect && (manualMedSelect.value = 'ibufrone');
+  manualMedOtherInput && (manualMedOtherInput.value = '');
+  manualMedDose && (manualMedDose.value = '');
+  manualMedNotes && (manualMedNotes.value = '');
+  updateManualMedFields();
   manualDatetime && (manualDatetime.value = formatDateInput(new Date()));
   openModal('#modal-manual');
 }
@@ -574,6 +856,8 @@ function saveManualEntry(){
         breastSide: manualBreast?.value || 'Gauche',
         durationSec
       };
+      const notes = manualNotes?.value?.trim();
+      if(notes) entry.notes = notes;
       feeds.push(entry);
       store.set('feeds', feeds);
     }else{
@@ -584,10 +868,12 @@ function saveManualEntry(){
         source: 'bottle',
         amountMl
       };
+      const notes = manualNotes?.value?.trim();
+      if(notes) entry.notes = notes;
       feeds.push(entry);
       store.set('feeds', feeds);
     }
-  }else{
+  }else if(manualType === 'elim'){
     const entry = {
       id: Date.now()+'',
       dateISO,
@@ -595,8 +881,38 @@ function saveManualEntry(){
       poop: clamp(Number(manualPoop?.value || 0), 0, 3),
       vomit: clamp(Number(manualVomit?.value || 0), 0, 3)
     };
+    const notes = manualElimNotes?.value?.trim();
+    if(notes) entry.notes = notes;
     elims.push(entry);
     store.set('elims', elims);
+  }else if(manualType === 'med'){
+    const selection = manualMedSelect?.value || 'ibufrone';
+    const labels = {
+      ibufrone: 'Ibufrone',
+      dalfalgan: 'Dalfalgan',
+      other: ''
+    };
+    let name = labels[selection] || selection;
+    if(selection === 'other'){
+      name = (manualMedOtherInput?.value || '').trim();
+      if(!name){
+        alert('Veuillez indiquer le nom du medicament.');
+        manualMedOtherInput?.focus();
+        return;
+      }
+    }
+    const dose = (manualMedDose?.value || '').trim();
+    const notes = (manualMedNotes?.value || '').trim();
+    const entry = {
+      id: Date.now()+'',
+      dateISO,
+      name,
+      medKey: selection
+    };
+    if(dose) entry.dose = dose;
+    if(notes) entry.notes = notes;
+    meds.push(entry);
+    store.set('meds', meds);
   }
 
   closeManualModal();
@@ -609,7 +925,9 @@ cancelManualBtn?.addEventListener('click', closeManualModal);
 saveManualBtn?.addEventListener('click', saveManualEntry);
 manualTypeButtons.forEach(btn => btn.addEventListener('click', ()=> setManualType(btn.dataset.type)));
 manualSource?.addEventListener('change', updateManualSourceFields);
+manualMedSelect?.addEventListener('change', updateManualMedFields);
 if(manualModal){
   setManualType('feed');
   updateManualSourceFields();
+  updateManualMedFields();
 }
