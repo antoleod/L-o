@@ -30,39 +30,42 @@ self.addEventListener('activate', event => {
 });
 
 self.addEventListener('fetch', event => {
-  // Ignore non-GET requests and requests to other origins (like chrome-extension://)
-  if (
-    event.request.method !== 'GET' ||
-    !event.request.url.startsWith(self.location.origin)
-  ) {
+  // Solo interceptar peticiones HTTP/HTTPS. Ignorar otras (ej. chrome-extension://)
+  if (!event.request.url.startsWith('http')) {
+    return;
+  }
+
+  // Estrategia Network-first para peticiones de navegación (HTML)
+  if (event.request.mode === 'navigate') {
     event.respondWith(
       fetch(event.request)
         .then(response => {
           const copy = response.clone();
-          caches.open(RUNTIME).then(cache => cache.put(event.request, copy));
+          // Solo cachear respuestas válidas
+          if (response && response.status === 200) {
+            caches.open(RUNTIME).then(cache => cache.put(event.request, copy));
+          }
           return response;
         })
         .catch(() => {
-          return caches.match(event.request).then(match => {
-            // For navigation, if network fails, serve index.html from cache.
-            if (event.request.mode === 'navigate') {
-              return match || caches.match('./index.html');
-            }
-            return match;
-          });
+          // Si la red falla, servir index.html desde el caché
+          return caches.match('./index.html');
         })
     );
     return;
   }
 
-  // For other assets (CSS, JS, Images), use a cache-first strategy.
+  // Estrategia Cache-first para otros assets (CSS, JS, Imágenes)
   event.respondWith(
     caches.match(event.request).then(cached => {
       return cached || fetch(event.request).then(response => {
         return caches.open(RUNTIME).then(cache => {
-          // Cache the new resource and return it
-          cache.put(event.request, response.clone());
-          return response;
+          // Solo cachear respuestas válidas
+          if (response && response.status === 200) {
+            cache.put(event.request, response.clone());
+          }
+          // Devolver la respuesta original, sea válida o no
+          return response.clone();
         });
       }).catch(() => {
         // If both cache and network fail for an image, return a fallback image.

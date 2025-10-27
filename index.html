@@ -22,14 +22,14 @@
       <div class="col">
         <button class="info-btn" id="info-btn" type="button">
           <div class="leo-name">Léo</div>
-          <div class="muted">Touchez pour voir les informations</div>
+          <div class="muted" id="leo-summary-info">Touchez pour voir les informations</div>
         </button>
       </div>
       <button class="chevron-btn" id="info-chevron" type="button" aria-label="Infos Léo">›</button>
     </div>
 
     <!-- Botones principales -->
-    <div class="row primary-actions">
+    <div class="primary-actions">
       <button class="btn btn-primary" id="btn-leche" aria-label="Enregistrer une tétée ou un biberon">
         <span class="btn-icon">🍼</span> Lait
       </button>
@@ -38,6 +38,9 @@
       </button>
       <button class="btn btn-warning" id="btn-med" aria-label="Enregistrer un médicament">
         <span class="btn-icon">💊</span> Meds
+      </button>
+      <button class="btn btn-info" id="btn-mesures" aria-label="Enregistrer la température, le poids ou la taille">
+        <span class="btn-icon">🌡️</span> Mesures
       </button>
     </div>
 
@@ -198,6 +201,36 @@
     </div>
   </div>
 
+  <!-- Modal MESURES -->
+  <div class="modal" id="modal-mesures" aria-hidden="true">
+    <div class="sheet stack">
+      <div class="row" style="align-items:center;justify-content:space-between">
+        <h2 style="margin:0">Mesures</h2>
+        <button class="btn btn-ghost" id="close-mesures" style="width:auto;padding:8px 12px" type="button">Fermer</button>
+      </div>
+
+      <div class="stack form-grid">
+        <div class="field">
+          <label for="mesure-temp">Température (°C)</label>
+          <input id="mesure-temp" class="input" type="number" inputmode="numeric" step="0.1" placeholder="ex. 37.5" />
+        </div>
+        <div class="field">
+          <label for="mesure-poids">Poids (kg)</label>
+          <input id="mesure-poids" class="input" type="number" inputmode="numeric" step="0.01" placeholder="ex. 4.25" />
+        </div>
+        <div class="field">
+          <label for="mesure-taille">Taille (cm)</label>
+          <input id="mesure-taille" class="input" type="number" inputmode="numeric" step="0.1" placeholder="ex. 55.5" />
+        </div>
+      </div>
+
+      <div class="footer">
+        <button class="btn btn-ghost" id="cancel-mesures" type="button">Annuler</button>
+        <button class="btn btn-primary" id="save-mesures" type="button">Enregistrer</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal MANUAL -->
   <div class="modal" id="modal-manual" aria-hidden="true">
     <div class="sheet stack">
@@ -210,6 +243,7 @@
         <button data-type="feed" class="active" type="button">Lait</button>
         <button data-type="elim" type="button">Pipi / Caca / Vomi</button>
         <button data-type="med" type="button">Medicaments</button>
+        <button data-type="measurement" type="button">Mesures</button>
       </div>
 
       <div class="stack form-grid" id="manual-feed-fields">
@@ -230,11 +264,11 @@
         </div>
         <div class="field" id="manual-duration-field">
           <label for="manual-duration">Durée (minutes)</label>
-          <input id="manual-duration" class="input" type="number" min="0" step="1" placeholder="ex. 12" />
+          <input id="manual-duration" class="input" type="number" inputmode="numeric" min="0" step="1" placeholder="ex. 12" />
         </div>
         <div class="field is-hidden" id="manual-amount-field">
           <label for="manual-amount">Quantité (ml)</label>
-          <input id="manual-amount" class="input" type="number" min="0" step="10" placeholder="ex. 120" />
+          <input id="manual-amount" class="input" type="number" inputmode="numeric" min="0" step="10" placeholder="ex. 120" />
         </div>
         <div class="field span-2">
           <label for="manual-notes">Notes</label>
@@ -245,15 +279,15 @@
       <div class="stack form-grid is-hidden" id="manual-elim-fields">
         <div class="field">
           <label for="manual-pee">Pipi</label>
-          <input id="manual-pee" class="input" type="number" min="0" max="3" step="1" value="0" />
+          <input id="manual-pee" class="input" type="number" inputmode="numeric" min="0" max="3" step="1" value="0" />
         </div>
         <div class="field">
           <label for="manual-poop">Caca</label>
-          <input id="manual-poop" class="input" type="number" min="0" max="3" step="1" value="0" />
+          <input id="manual-poop" class="input" type="number" inputmode="numeric" min="0" max="3" step="1" value="0" />
         </div>
         <div class="field">
           <label for="manual-vomit">Vomi</label>
-          <input id="manual-vomit" class="input" type="number" min="0" max="3" step="1" value="0" />
+          <input id="manual-vomit" class="input" type="number" inputmode="numeric" min="0" max="3" step="1" value="0" />
         </div>
         <div class="field span-2">
           <label for="manual-elim-notes">Notes</label>
@@ -281,6 +315,21 @@
         <div class="field span-2">
           <label for="manual-med-notes">Notes</label>
           <textarea id="manual-med-notes" class="input textarea" rows="2" placeholder="Réactions, rappel..."></textarea>
+        </div>
+      </div>
+
+      <div class="stack form-grid is-hidden" id="manual-mesures-fields">
+        <div class="field">
+          <label for="manual-mesure-temp">Température (°C)</label>
+          <input id="manual-mesure-temp" class="input" type="number" inputmode="numeric" step="0.1" placeholder="ex. 37.5" />
+        </div>
+        <div class="field">
+          <label for="manual-mesure-poids">Poids (kg)</label>
+          <input id="manual-mesure-poids" class="input" type="number" inputmode="numeric" step="0.01" placeholder="ex. 4.25" />
+        </div>
+        <div class="field">
+          <label for="manual-mesure-taille">Taille (cm)</label>
+          <input id="manual-mesure-taille" class="input" type="number" inputmode="numeric" step="0.1" placeholder="ex. 55.5" />
         </div>
       </div>
 

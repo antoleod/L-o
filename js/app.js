@@ -232,6 +232,7 @@ const bgPicker = $('#bg-picker');
 const avatarBtn = $('#avatar-btn');
 const infoBtn = $('#info-btn');
 const infoChevron = $('#info-chevron');
+const leoSummaryInfoEl = $('#leo-summary-info');
 const addManualBtn = $('#add-manual');
 const summaryFeedEl = $('#summary-feed');
 const manualModal = $('#modal-manual');
@@ -263,6 +264,10 @@ const manualMedOtherField = $('#manual-med-other-field');
 const manualMedOtherInput = $('#manual-med-other');
 const manualMedDose = $('#manual-med-dose');
 const manualMedNotes = $('#manual-med-notes');
+const manualMesuresFields = $('#manual-mesures-fields');
+const manualMesureTemp = $('#manual-mesure-temp');
+const manualMesurePoids = $('#manual-mesure-poids');
+const manualMesureTaille = $('#manual-mesure-taille');
 
 const SAVE_MESSAGES = {
   idle: 'Prêt',
@@ -286,10 +291,18 @@ const medOtherInput = $('#medication-other');
 const summaryMedEl = $('#summary-med');
 
 // ===== State =====
-let feeds = store.get('feeds', []); // {id,dateISO,source,breastSide,durationSec,amountMl}
-let elims = store.get('elims', []); // {id,dateISO,pee,poop,vomit}
-let meds = store.get('meds', []); // {id,dateISO,name}
+const state = {
+  feeds: store.get('feeds', []), // {id,dateISO,source,breastSide,durationSec,amountMl}
+  elims: store.get('elims', []), // {id,dateISO,pee,poop,vomit}
+  meds: store.get('meds', []), // {id,dateISO,name}
+  measurements: store.get('measurements', []) // {id,dateISO,temp,weight,height}
+};
 const HISTORY_RANGE_KEY = 'historyRange';
+
+// Variable para el modo de edición, se gestionará a través de las funciones del modal
+let editingEntry = null;
+
+
 let historyRange = normalizeHistoryRange(store.get(HISTORY_RANGE_KEY, {mode:'day'}));
 let statsChart = null;
 const TIMER_KEY = 'timerState';
@@ -300,9 +313,10 @@ let timerInterval = null;
 
 function cloneDataSnapshot(){
   return {
-    feeds: feeds.map(f => ({...f})),
-    elims: elims.map(e => ({...e})),
-    meds: meds.map(m => ({...m}))
+    feeds: state.feeds.map(f => ({...f})),
+    elims: state.elims.map(e => ({...e})),
+    meds: state.meds.map(m => ({...m})),
+    measurements: state.measurements.map(m => ({...m}))
   };
 }
 
@@ -410,32 +424,6 @@ function exportReports(){
   }
 }
 
-function exportReports(){
-  try{
-    const snapshot = cloneDataSnapshot();
-    snapshot.exportedAt = new Date().toISOString();
-    const json = JSON.stringify(snapshot, null, 2);
-    const blob = new Blob([json], {type:'application/json'});
-    const url = URL.createObjectURL(blob);
-    const now = new Date();
-    const pad = (val) => String(val).padStart(2, '0');
-    const filename = `leo-reports-${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}.json`;
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    requestAnimationFrame(() => {
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    });
-    setSaveIndicator('synced', 'Export téléchargé');
-  }catch(err){
-    console.error('Export failed:', err);
-    setSaveIndicator('error', 'Export indisponible');
-  }
-}
-
 function persistAll(reason = 'Sync update'){
   store.set('feeds', feeds);
   store.set('elims', elims);
@@ -448,21 +436,34 @@ function persistAll(reason = 'Sync update'){
   enqueueRemoteSync(reason);
 }
 
+function updateState(updater) {
+  const newState = updater(cloneDataSnapshot());
+  state.feeds = newState.feeds || [];
+  state.elims = newState.elims || [];
+  state.meds = newState.meds || [];
+  state.measurements = newState.measurements || [];
+  
+  store.set('feeds', state.feeds);
+  store.set('elims', state.elims);
+  store.set('meds', state.meds);
+  store.set('measurements', state.measurements);
+}
+
 function replaceDataFromSnapshot(snapshot, {persistLocal = true, skipRender = false} = {}){
-  if(snapshot && typeof snapshot === 'object'){
-    feeds = Array.isArray(snapshot.feeds) ? snapshot.feeds.map(f => ({...f})) : [];
-    elims = Array.isArray(snapshot.elims) ? snapshot.elims.map(e => ({...e})) : [];
-    meds = Array.isArray(snapshot.meds) ? snapshot.meds.map(m => ({...m})) : [];
-  }else{
-    feeds = [];
-    elims = [];
-    meds = [];
+  const data = {
+    feeds: [],
+    elims: [],
+    meds: [],
+    measurements: []
+  };
+  if (snapshot && typeof snapshot === 'object') {
+    data.feeds = Array.isArray(snapshot.feeds) ? snapshot.feeds.map(f => ({...f})) : [];
+    data.elims = Array.isArray(snapshot.elims) ? snapshot.elims.map(e => ({...e})) : [];
+    data.meds = Array.isArray(snapshot.meds) ? snapshot.meds.map(m => ({...m})) : [];
+    data.measurements = Array.isArray(snapshot.measurements) ? snapshot.measurements.map(m => ({...m})) : [];
   }
-  if(persistLocal){
-    store.set('feeds', feeds);
-    store.set('elims', elims);
-    store.set('meds', meds);
-  }
+  updateState(() => data);
+
   if(!skipRender){
     renderHistory();
   }
@@ -666,9 +667,10 @@ function handleHistoryRangeMenuSelection(target){
 function getHistoryEntriesForRange(range = historyRange){
   const bounds = getHistoryRangeBounds(range);
   return [
-    ...feeds.map(f => ({type:'feed', item:f})),
-    ...elims.map(e => ({type:'elim', item:e})),
-    ...meds.map(m => ({type:'med', item:m}))
+    ...state.feeds.map(f => ({type:'feed', item:f})),
+    ...state.elims.map(e => ({type:'elim', item:e})),
+    ...state.meds.map(m => ({type:'med', item:m})),
+    ...state.measurements.map(m => ({type:'measurement', item:m}))
   ]
     .filter(entry => {
       const timestamp = new Date(entry.item.dateISO).getTime();
@@ -1084,49 +1086,75 @@ function renderHistory(){
     empty.textContent = "Aucun enregistrement pour le moment. Ajoutez un premier suivi !";
     historyList.appendChild(empty);
   }else{
-    for(const row of all){
-      const div = document.createElement('div');
-      div.className = 'item enter';
-      const dateString = new Date(row.item.dateISO).toLocaleString();
-      let title = '';
-      if(row.type === 'feed'){
-        if(row.item.source === 'breast'){
-          const mins = Math.round((row.item.durationSec || 0) / 60);
-          title = `🍼 Sein (${escapeHtml(row.item.breastSide || '')}) · ${mins} min`;
-        }else{
-          const ml = Number(row.item.amountMl || 0);
-          title = `🍼 Biberon · ${ml} ml`;
+    const groupedByDay = all.reduce((acc, entry) => {
+      const date = new Date(entry.item.dateISO);
+      const dayKey = toDateInputValue(date); // YYYY-MM-DD
+      if (!acc[dayKey]) {
+        acc[dayKey] = [];
+      }
+      acc[dayKey].push(entry);
+      return acc;
+    }, {});
+
+    for (const dayKey in groupedByDay) {
+      const dayHeader = document.createElement('div');
+      dayHeader.className = 'history-day-header';
+      const date = parseDateInput(dayKey);
+      const isToday = toDateInputValue(new Date()) === dayKey;
+      dayHeader.textContent = isToday ? "Aujourd'hui" : date.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+      historyList.appendChild(dayHeader);
+
+      const entriesForDay = groupedByDay[dayKey];
+      for (const row of entriesForDay) {
+        const div = document.createElement('div');
+        div.className = 'item enter';
+        const dateString = new Date(row.item.dateISO).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+        let title = '';
+        if(row.type === 'feed'){
+          if(row.item.source === 'breast'){
+            const mins = Math.round((row.item.durationSec || 0) / 60);
+            title = `🍼 Sein (${escapeHtml(row.item.breastSide || '')}) · ${mins} min`;
+          }else{
+            const ml = Number(row.item.amountMl || 0);
+            title = `🍼 Biberon · ${ml} ml`;
+          }
+        }else if(row.type === 'elim'){
+          title = `🚼 Eliminations · P:${row.item.pee} · C:${row.item.poop} · V:${row.item.vomit}`;
+        }else if(row.type === 'med'){
+          const doseSuffix = row.item.dose ? ` · ${escapeHtml(row.item.dose)}` : '';
+          title = `💊 ${escapeHtml(row.item.name)}${doseSuffix}`;
+        }else if(row.type === 'measurement'){
+          const parts = ['📏 Mesures'];
+          if(row.item.temp) parts.push(`Temp ${row.item.temp}°C`);
+          if(row.item.weight) parts.push(`Poids ${row.item.weight}kg`);
+          if(row.item.height) parts.push(`Taille ${row.item.height}cm`);
+          title = parts.join(' · ');
         }
-      }else if(row.type === 'elim'){
-        title = `🚼 Eliminations · P:${row.item.pee} · C:${row.item.poop} · V:${row.item.vomit}`;
-      }else if(row.type === 'med'){
-        const doseSuffix = row.item.dose ? ` · ${escapeHtml(row.item.dose)}` : '';
-        title = `💊 ${escapeHtml(row.item.name)}${doseSuffix}`;
+        const metaParts = [`<span class="item-meta-time">${escapeHtml(dateString)}</span>`];
+        if(row.type === 'med' && row.item.medKey){
+          const medLabel = row.item.medKey === 'other' ? 'AUTRE' : String(row.item.medKey).toUpperCase();
+          metaParts.push(`<span class="item-meta-tag">${escapeHtml(medLabel)}</span>`);
+        }
+        if(row.item.notes){
+          metaParts.push(`<span class="item-note">${escapeHtml(row.item.notes)}</span>`);
+        }
+        div.innerHTML = `
+          <div class="item-content">
+            <strong>${title}</strong>
+            <div class="item-meta">${metaParts.join('')}</div>
+          </div>
+          <div class="item-actions">
+            <button class="item-action item-edit" data-type="${row.type}" data-id="${row.item.id}" aria-label="Modifier l'entrée">
+              <span>&#9998;</span>
+            </button>
+            <button class="item-delete" data-type="${row.type}" data-id="${row.item.id}" aria-label="Supprimer l'entrée">
+              <span>×</span>
+            </button>
+          </div>
+        `;
+        historyList.appendChild(div);
+        requestAnimationFrame(()=> div.classList.remove('enter'));
       }
-      const metaParts = [`<span class="item-meta-time">${escapeHtml(dateString)}</span>`];
-      if(row.type === 'med' && row.item.medKey){
-        const medLabel = row.item.medKey === 'other' ? 'AUTRE' : String(row.item.medKey).toUpperCase();
-        metaParts.push(`<span class="item-meta-tag">${escapeHtml(medLabel)}</span>`);
-      }
-      if(row.item.notes){
-        metaParts.push(`<span class="item-note">${escapeHtml(row.item.notes)}</span>`);
-      }
-      div.innerHTML = `
-        <div class="item-content">
-          <strong>${title}</strong>
-          <div class="item-meta">${metaParts.join('')}</div>
-        </div>
-        <div class="item-actions">
-          <button class="item-action item-edit" data-type="${row.type}" data-id="${row.item.id}" aria-label="Modifier l'entrée">
-            <span>&#9998;</span>
-          </button>
-          <button class="item-delete" data-type="${row.type}" data-id="${row.item.id}" aria-label="Supprimer l'entrée">
-            <span>×</span>
-          </button>
-        </div>
-      `;
-      historyList.appendChild(div);
-      requestAnimationFrame(()=> div.classList.remove('enter'));
     }
   }
   if(countPillEl){
@@ -1213,19 +1241,26 @@ historyList?.addEventListener('click', (e)=>{
     const {type, id} = deleteBtn.dataset;
     let changed = false;
 
-    if (type === 'feed') {
-      feeds = feeds.filter(f => f.id !== id);
-      changed = true;
-    } else if (type === 'elim') {
-      elims = elims.filter(el => el.id !== id);
-      changed = true;
-    } else if (type === 'med') {
-      meds = meds.filter(m => m.id !== id);
-      changed = true;
-    }
+    updateState(currentData => {
+      if (type === 'feed') {
+        currentData.feeds = currentData.feeds.filter(f => f.id !== id);
+        changed = true;
+      } else if (type === 'elim') {
+        currentData.elims = currentData.elims.filter(el => el.id !== id);
+        changed = true;
+      } else if (type === 'med') {
+        currentData.meds = currentData.meds.filter(m => m.id !== id);
+        changed = true;
+      } else if (type === 'measurement') {
+        currentData.measurements = currentData.measurements.filter(m => m.id !== id);
+        changed = true;
+      }
+      return currentData;
+    });
 
     if (changed) {
-      persistAll('Delete entry');
+      // persistAll is now called inside updateState indirectly
+      enqueueRemoteSync('Delete entry');
     }
     deleteBtn.disabled = true;
     setTimeout(renderHistory, 180);
@@ -1235,11 +1270,11 @@ historyList?.addEventListener('click', (e)=>{
 function updateMedSummary(){
   if(!summaryMedEl) return;
   const nowString = new Date().toLocaleString();
-  if(!meds.length){
+  if(!state.meds.length){
     summaryMedEl.innerHTML = `<strong>Derniere prise</strong><span>Aucun medicament enregistre</span><span>Nouvelle prise ${escapeHtml(nowString)}</span>`;
     return;
   }
-  const latest = meds.reduce((acc, cur)=> acc && acc.dateISO > cur.dateISO ? acc : cur, meds[0]);
+  const latest = state.meds.reduce((acc, cur)=> acc && acc.dateISO > cur.dateISO ? acc : cur, state.meds[0]);
   const dateString = new Date(latest.dateISO).toLocaleString();
   const parts = [
     '<strong>Derniere prise</strong>',
@@ -1255,12 +1290,34 @@ function updateMedSummary(){
   summaryMedEl.innerHTML = parts.join('');
 }
 
+function updateLeoSummary() {
+  if (!leoSummaryInfoEl) return;
+
+  const latestWeight = state.measurements
+    .filter(m => m.weight != null && m.weight > 0)
+    .sort((a, b) => (a.dateISO < b.dateISO ? 1 : -1))[0];
+
+  const latestHeight = state.measurements
+    .filter(m => m.height != null && m.height > 0)
+    .sort((a, b) => (a.dateISO < b.dateISO ? 1 : -1))[0];
+
+  const parts = [];
+  if (latestWeight) parts.push(`Poids: ${latestWeight.weight} kg`);
+  if (latestHeight) parts.push(`Taille: ${latestHeight.height} cm`);
+
+  if (parts.length > 0) {
+    leoSummaryInfoEl.textContent = parts.join(' · ');
+  } else {
+    leoSummaryInfoEl.textContent = 'Touchez pour voir les informations';
+  }
+}
+
 function updateSummaries(){
   const today = new Date();
   const start = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
 
   if(summaryFeedEl){
-    const todayFeeds = feeds.filter(f => new Date(f.dateISO).getTime() >= start);
+    const todayFeeds = state.feeds.filter(f => new Date(f.dateISO).getTime() >= start);
     if(!todayFeeds.length){
       summaryFeedEl.innerHTML = "<strong>Aujourd'hui</strong><span>Aucun enregistrement</span>";
     }else{
@@ -1278,7 +1335,7 @@ function updateSummaries(){
   }
 
   if(summaryElimEl || dashboardElimEl){
-    const todayElims = elims.filter(e => new Date(e.dateISO).getTime() >= start);
+    const todayElims = state.elims.filter(e => new Date(e.dateISO).getTime() >= start);
     if(!todayElims.length){
       if(summaryElimEl) summaryElimEl.innerHTML = "<strong>Aujourd'hui</strong><span>Aucune donnée</span>";
       if(dashboardElimEl) dashboardElimEl.innerHTML = "<strong>Pipi / Caca / Vomi</strong><span>Aucune donnée aujourd'hui</span>";
@@ -1311,6 +1368,7 @@ function updateSummaries(){
     }
   }
   updateMedSummary();
+  updateLeoSummary();
 }
 
 function renderElimHistory(){
@@ -1318,7 +1376,7 @@ function renderElimHistory(){
   if(!list) return;
   const today = new Date();
   const start = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
-  const todays = elims
+  const todays = state.elims
     .filter(e => new Date(e.dateISO).getTime() >= start)
     .sort((a,b)=> a.dateISO < b.dateISO ? 1 : -1);
 
@@ -1345,7 +1403,7 @@ function renderFeedHistory(){
   if(!container) return;
   const today = new Date();
   const start = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
-  const todaysFeeds = feeds
+  const todaysFeeds = state.feeds
     .filter(f => new Date(f.dateISO).getTime() >= start)
     .sort((a,b)=> a.dateISO < b.dateISO ? 1 : -1);
 
@@ -1482,9 +1540,12 @@ function stopTimerWithoutSaving(){
 }
 
 function saveFeed(entry){
-  feeds.push(entry);
-  persistAll('Save feed entry');
+  updateState(currentData => {
+    currentData.feeds.push(entry);
+    return currentData;
+  });
   closeModal('#modal-leche');
+  enqueueRemoteSync('Save feed entry');
   renderHistory();
 }
 
@@ -1560,14 +1621,17 @@ function renderScale(root){
 $$('.scale').forEach(renderScale);
 
 $('#save-elim')?.addEventListener('click', ()=>{
-  elims.push({
-    id: Date.now()+'',
-    dateISO: new Date().toISOString(),
-    pee: scales.pee,
-    poop: scales.poop,
-    vomit: scales.vomit
+  updateState(currentData => {
+    currentData.elims.push({
+      id: Date.now()+'',
+      dateISO: new Date().toISOString(),
+      pee: scales.pee,
+      poop: scales.poop,
+      vomit: scales.vomit
+    });
+    return currentData;
   });
-  persistAll('Add elimination entry');
+  enqueueRemoteSync('Add elimination entry');
   closeModal('#modal-elim');
   renderHistory();
 });
@@ -1613,14 +1677,17 @@ function saveMedication(){
       return;
     }
   }
-  meds.push({
-    id: Date.now()+'',
-    dateISO: new Date().toISOString(),
-    name,
-    medKey: selection
+  updateState(currentData => {
+    currentData.meds.push({
+      id: Date.now()+'',
+      dateISO: new Date().toISOString(),
+      name,
+      medKey: selection
+    });
+    return currentData;
   });
-  persistAll('Add medication entry');
   updateMedSummary();
+  enqueueRemoteSync('Add medication entry');
   renderHistory();
   closeMedModal();
 }
@@ -1631,6 +1698,54 @@ cancelMedBtn?.addEventListener('click', closeMedModal);
 saveMedBtn?.addEventListener('click', saveMedication);
 medSelect?.addEventListener('change', updateMedOtherField);
 updateMedOtherField();
+
+// ===== Mesures modal logic =====
+const mesuresBtn = $('#btn-mesures');
+const mesuresModal = $('#modal-mesures');
+const closeMesuresBtn = $('#close-mesures');
+const cancelMesuresBtn = $('#cancel-mesures');
+const saveMesuresBtn = $('#save-mesures');
+const tempInput = $('#mesure-temp');
+const poidsInput = $('#mesure-poids');
+const tailleInput = $('#mesure-taille');
+
+function resetMesuresForm() {
+  if (tempInput) tempInput.value = '';
+  if (poidsInput) poidsInput.value = '';
+  if (tailleInput) tailleInput.value = '';
+}
+
+function saveMesures() {
+  const temp = tempInput.value ? parseFloat(tempInput.value) : null;
+  const weight = poidsInput.value ? parseFloat(poidsInput.value) : null;
+  const height = tailleInput.value ? parseFloat(tailleInput.value) : null;
+
+  if (temp === null && weight === null && height === null) {
+    alert("Veuillez entrer au moins une mesure.");
+    return;
+  }
+
+  const entry = { id: Date.now() + '', dateISO: new Date().toISOString() };
+  if (temp !== null) entry.temp = temp;
+  if (weight !== null) entry.weight = weight;
+  if (height !== null) entry.height = height;
+
+  updateState(currentData => {
+    currentData.measurements.push(entry);
+    return currentData;
+  });
+  enqueueRemoteSync('Add measurement entry');
+  closeModal('#modal-mesures');
+  renderHistory();
+}
+
+mesuresBtn?.addEventListener('click', () => {
+  resetMesuresForm();
+  openModal('#modal-mesures');
+});
+closeMesuresBtn?.addEventListener('click', () => closeModal('#modal-mesures'));
+cancelMesuresBtn?.addEventListener('click', () => closeModal('#modal-mesures'));
+saveMesuresBtn?.addEventListener('click', saveMesures);
 
 // ===== Avatar & info actions =====
 if(bgPicker){
@@ -1704,6 +1819,7 @@ function setManualType(type){
   manualFeedFields?.classList?.toggle('is-hidden', type !== 'feed');
   manualElimFields?.classList?.toggle('is-hidden', type !== 'elim');
   manualMedFields?.classList?.toggle('is-hidden', type !== 'med');
+  manualMesuresFields?.classList?.toggle('is-hidden', type !== 'measurement');
   if(type === 'feed') updateManualSourceFields();
   if(type === 'med') updateManualMedFields();
 }
@@ -1728,20 +1844,21 @@ function updateManualMedFields(){
 }
 
 function getListByType(type){
-  if(type === 'feed') return feeds;
-  if(type === 'elim') return elims;
-  if(type === 'med') return meds;
+  if(type === 'feed') return state.feeds;
+  if(type === 'elim') return state.elims;
+  if(type === 'med') return state.meds;
+  if(type === 'measurement') return state.measurements;
   return null;
 }
 
 function findEntryById(type, id){
   const list = getListByType(type);
   if(!list) return null;
-  return list.find(item => item && item.id === id) || null;
+  return list.find(item => item && String(item.id) === String(id)) || null;
 }
 
 function replaceEntryInList(type, entry){
-  const list = getListByType(type);
+  const list = getListByType(type); // This is a copy from state
   if(!list) return false;
   const idx = list.findIndex(item => item && item.id === entry.id);
   if(idx !== -1){
@@ -1783,6 +1900,9 @@ function resetManualFields(){
   if(manualMedOtherInput) manualMedOtherInput.value = '';
   if(manualMedDose) manualMedDose.value = '';
   if(manualMedNotes) manualMedNotes.value = '';
+  if(manualMesureTemp) manualMesureTemp.value = '';
+  if(manualMesurePoids) manualMesurePoids.value = '';
+  if(manualMesureTaille) manualMesureTaille.value = '';
   updateManualMedFields();
   if(manualDatetime) manualDatetime.value = formatDateInput(new Date());
 }
@@ -1833,12 +1953,16 @@ function populateManualForm(type, entry){
     }
     if(manualMedDose) manualMedDose.value = entry.dose || '';
     if(manualMedNotes) manualMedNotes.value = entry.notes || '';
+  }else if(type === 'measurement'){
+    if(manualMesureTemp) manualMesureTemp.value = entry.temp ?? '';
+    if(manualMesurePoids) manualMesurePoids.value = entry.weight ?? '';
+    if(manualMesureTaille) manualMesureTaille.value = entry.height ?? '';
   }
 }
 
 function openManualModal({mode='create', type='feed', entry=null} = {}){
   const isEdit = mode === 'edit' && entry;
-  editingEntry = isEdit && entry ? {type, id: entry.id} : null;
+  editingEntry = isEdit ? {type, id: entry.id} : null;
   setManualMode(isEdit);
   resetManualFields();
   const effectiveType = isEdit && entry ? type : 'feed';
@@ -1852,15 +1976,10 @@ function openManualModal({mode='create', type='feed', entry=null} = {}){
   openModal('#modal-manual');
 }
 function closeManualModal(){
-
   setManualMode(false);
-
   editingEntry = null;
-
   setManualType('feed');
-
   resetManualFields();
-
   closeModal('#modal-manual');
 
 }
@@ -1868,19 +1987,12 @@ function closeManualModal(){
 
 
 function beginEditEntry(type, id){
-
   const existing = findEntryById(type, id);
-
   if(!existing){
-
     console.warn('Entry not found for editing', type, id);
-
     return;
-
   }
-
   const copy = JSON.parse(JSON.stringify(existing));
-
   openManualModal({mode:'edit', type, entry: copy});
 
 }
@@ -1888,193 +2000,114 @@ function beginEditEntry(type, id){
 
 
 function saveManualEntry(){
-
   const isEdit = Boolean(editingEntry);
-
   const targetType = isEdit && editingEntry ? editingEntry.type : manualType;
-
-  manualType = targetType;
-
   let date = manualDatetime && manualDatetime.value ? new Date(manualDatetime.value) : new Date();
-
   if(Number.isNaN(date.getTime())) date = new Date();
-
   const dateISO = date.toISOString();
-
   let reason = null;
+  let entry = null;
 
-
-
-  if(targetType === 'feed'){
-
-    const sourceValue = (manualSource?.value || 'breast') === 'bottle' ? 'bottle' : 'breast';
-
-    const entry = {
-
-      id: isEdit && editingEntry ? editingEntry.id : Date.now()+'',
-
-      dateISO,
-
-      source: sourceValue
-
-    };
-
-    if(sourceValue === 'breast'){
-
-      const mins = Math.max(0, Number(manualDuration?.value || 0));
-
-      entry.durationSec = Math.round(mins * 60);
-
-      entry.breastSide = manualBreast?.value || 'Gauche';
-
-    }else{
-
-      entry.amountMl = Math.max(0, Number(manualAmount?.value || 0));
-
-    }
-
-    const notes = manualNotes?.value?.trim();
-
-    if(notes) entry.notes = notes;
-
-    if(isEdit){
-
-      if(!replaceEntryInList('feed', entry)){
-
-        feeds.push(entry);
-
+  updateState(currentData => {
+    if (targetType === 'feed') {
+      const sourceValue = (manualSource?.value || 'breast') === 'bottle' ? 'bottle' : 'breast';
+      entry = { id: isEdit ? editingEntry.id : Date.now()+'', dateISO, source: sourceValue };
+      if (sourceValue === 'breast') {
+        const mins = Math.max(0, Number(manualDuration?.value || 0));
+        entry.durationSec = Math.round(mins * 60);
+        entry.breastSide = manualBreast?.value || 'Gauche';
+      } else {
+        entry.amountMl = Math.max(0, Number(manualAmount?.value || 0));
       }
+      const notes = manualNotes?.value?.trim();
+      if (notes) entry.notes = notes;
 
-      reason = `Edit feed entry ${entry.id}`;
-
-    }else{
-
-      feeds.push(entry);
-
-      reason = sourceValue === 'breast' ? 'Manual feed entry (breast)' : 'Manual feed entry (bottle)';
-
-    }
-
-  }else if(targetType === 'elim'){
-
-    const entry = {
-
-      id: isEdit && editingEntry ? editingEntry.id : Date.now()+'',
-
-      dateISO,
-
-      pee: clamp(Number(manualPee?.value || 0), 0, 3),
-
-      poop: clamp(Number(manualPoop?.value || 0), 0, 3),
-
-      vomit: clamp(Number(manualVomit?.value || 0), 0, 3)
-
-    };
-
-    const notes = manualElimNotes?.value?.trim();
-
-    if(notes) entry.notes = notes;
-
-    if(isEdit){
-
-      if(!replaceEntryInList('elim', entry)){
-
-        elims.push(entry);
-
+      if (isEdit) {
+        const idx = currentData.feeds.findIndex(item => String(item.id) === String(entry.id));
+        if (idx > -1) currentData.feeds[idx] = entry; else currentData.feeds.push(entry);
+        reason = `Edit feed entry ${entry.id}`;
+      } else {
+        currentData.feeds.push(entry);
+        reason = 'Manual feed entry';
       }
+    } else if (targetType === 'elim') {
+      entry = {
+        id: isEdit ? editingEntry.id : Date.now()+'',
+        dateISO,
+        pee: clamp(Number(manualPee?.value || 0), 0, 3),
+        poop: clamp(Number(manualPoop?.value || 0), 0, 3),
+        vomit: clamp(Number(manualVomit?.value || 0), 0, 3)
+      };
+      const notes = manualElimNotes?.value?.trim();
+      if (notes) entry.notes = notes;
 
-      reason = `Edit elimination entry ${entry.id}`;
-
-    }else{
-
-      elims.push(entry);
-
-      reason = 'Manual elimination entry';
-
-    }
-
-  }else if(targetType === 'med'){
-
+      if (isEdit) {
+        const idx = currentData.elims.findIndex(item => String(item.id) === String(entry.id));
+        if (idx > -1) currentData.elims[idx] = entry; else currentData.elims.push(entry);
+        reason = `Edit elimination entry ${entry.id}`;
+      } else {
+        currentData.elims.push(entry);
+        reason = 'Manual elimination entry';
+      }
+    } else if (targetType === 'med') {
     let selection = manualMedSelect?.value || 'ibufrone';
-
     const labels = {ibufrone:'Ibufrone', dalfalgan:'Dalfalgan', other:''};
-
     if(!labels[selection]) selection = 'other';
-
     let name = labels[selection] || selection;
-
     if(selection === 'other'){
-
       name = (manualMedOtherInput?.value || '').trim();
-
       if(!name){
-
         alert('Veuillez indiquer le nom du medicament.');
-
         manualMedOtherInput?.focus();
-
-        return;
-
+        throw new Error("Medication name required"); // Throw to stop execution
       }
-
     }
-
     const dose = (manualMedDose?.value || '').trim();
-
     const notes = (manualMedNotes?.value || '').trim();
+    entry = { id: isEdit ? editingEntry.id : Date.now()+'', dateISO, name, medKey: selection };
+    if (dose) entry.dose = dose;
+    if (notes) entry.notes = notes;
 
-    const entry = {
+      if (isEdit) {
+        const idx = currentData.meds.findIndex(item => String(item.id) === String(entry.id));
+        if (idx > -1) currentData.meds[idx] = entry; else currentData.meds.push(entry);
+        reason = `Edit medication entry ${entry.id}`;
+      } else {
+        currentData.meds.push(entry);
+        reason = 'Manual medication entry';
+      }
+    } else if (targetType === 'measurement') {
+      const temp = manualMesureTemp.value ? parseFloat(manualMesureTemp.value) : null;
+      const weight = manualMesurePoids.value ? parseFloat(manualMesurePoids.value) : null;
+      const height = manualMesureTaille.value ? parseFloat(manualMesureTaille.value) : null;
 
-      id: isEdit && editingEntry ? editingEntry.id : Date.now()+'',
-
-      dateISO,
-
-      name,
-
-      medKey: selection
-
-    };
-
-    if(dose) entry.dose = dose;
-
-    if(notes) entry.notes = notes;
-
-    if(isEdit){
-
-      if(!replaceEntryInList('med', entry)){
-
-        meds.push(entry);
-
+      if (temp === null && weight === null && height === null) {
+        alert("Veuillez entrer au moins une mesure.");
+        throw new Error("At least one measurement is required");
       }
 
-      reason = `Edit medication entry ${entry.id}`;
+      entry = { id: isEdit ? editingEntry.id : Date.now() + '', dateISO };
+      if (temp !== null) entry.temp = temp;
+      if (weight !== null) entry.weight = weight;
+      if (height !== null) entry.height = height;
 
-    }else{
-
-      meds.push(entry);
-
-      reason = 'Manual medication entry';
-
+      if (isEdit) {
+        const idx = currentData.measurements.findIndex(item => String(item.id) === String(entry.id));
+        if (idx > -1) currentData.measurements[idx] = entry; else currentData.measurements.push(entry);
+        reason = `Edit measurement entry ${entry.id}`;
+      } else {
+        currentData.measurements.push(entry);
+        reason = 'Manual measurement entry';
+      }
     }
-
-  }else{
-
-    console.warn('Unknown manual type:', targetType);
-
-  }
-
-
+    return currentData;
+  });
 
   if(reason){
-
-    persistAll(reason);
-
+    enqueueRemoteSync(reason);
   }
-
   closeManualModal();
-
   renderHistory();
-
 }
 
 
