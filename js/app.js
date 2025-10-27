@@ -221,6 +221,8 @@ const statsModal = $('#modal-stats');
 const closeStatsBtn = $('#close-stats');
 const statsCanvas = $('#stats-chart');
 const statsSummaryEl = $('#stats-summary');
+const statsDailyList = $('#stats-day-list');
+const statsBreakdownLabel = $('#stats-breakdown-label');
 const summaryFeedEl = $('#summary-feed');
 const summaryElimEl = $('#summary-elim');
 const dashboardElimEl = $('#dashboard-elim');
@@ -605,14 +607,17 @@ function getFeedStats(range = historyRange){
   return base;
 }
 
+function formatStatsDayLabel(dateISO, options = {weekday:'short', day:'numeric'}){
+  const parsed = parseDateInput(dateISO);
+  if(!parsed) return dateISO || '';
+  const label = parsed.toLocaleDateString('fr-FR', options);
+  if(!label) return '';
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
 function getStatsChartData(range = historyRange){
   const stats = getFeedStats(range);
-  const labels = stats.perDay.map(day => {
-    const parsed = parseDateInput(day.dateISO);
-    return parsed
-      ? parsed.toLocaleDateString('fr-FR', {weekday:'short', day:'numeric'})
-      : day.dateISO;
-  });
+  const labels = stats.perDay.map(day => formatStatsDayLabel(day.dateISO, {weekday:'short', day:'numeric'}));
   const breastMinutes = stats.perDay.map(day => day.breastMinutes);
   const bottleMl = stats.perDay.map(day => day.bottleMl);
   return {
@@ -627,11 +632,15 @@ function getStatsChartData(range = historyRange){
 function updateStatsSummary(stats = null){
   if(!statsSummaryEl) return;
   const data = stats || getFeedStats();
-  const totals = data.totals;
-  const dayCount = Math.max(data.dayCount || (data.perDay?.length ?? 0), 1);
+  const totals = data?.totals || {feedCount:0, breastMinutes:0, bottleMl:0, breastSessions:0, bottleSessions:0};
+  const perDay = Array.isArray(data?.perDay) ? data.perDay : [];
+  const dayCountRaw = data?.dayCount ?? perDay.length ?? 0;
+  const dayCount = Math.max(dayCountRaw, 1);
   const hasData = totals.feedCount > 0 || totals.breastMinutes > 0 || totals.bottleMl > 0;
   if(!hasData){
     statsSummaryEl.innerHTML = '<div class="stat-placeholder">Aucune donnee pour cette periode.</div>';
+    if(statsBreakdownLabel) statsBreakdownLabel.textContent = data?.label || '';
+    renderStatsDailyList(data);
     return;
   }
 
@@ -640,24 +649,165 @@ function updateStatsSummary(stats = null){
   const avgBreastMinutes = totals.breastMinutes / dayCount;
   const avgBottleMl = totals.bottleMl / dayCount;
 
+  const busiestDay = perDay.reduce((best, day) => {
+    if(!day) return best;
+    if(!best) return day;
+    const dayFeeds = day.feedCount || 0;
+    const bestFeeds = best.feedCount || 0;
+    if(dayFeeds > bestFeeds) return day;
+    if(dayFeeds === bestFeeds){
+      const dayVolume = (day.breastMinutes || 0) + (day.bottleMl || 0) / 60;
+      const bestVolume = (best.breastMinutes || 0) + (best.bottleMl || 0) / 60;
+      return dayVolume > bestVolume ? day : best;
+    }
+    return best;
+  }, null);
+
+  const insightItems = [];
+  if(busiestDay && (busiestDay.feedCount > 0 || busiestDay.breastMinutes > 0 || busiestDay.bottleMl > 0)){
+    const busyLabel = formatStatsDayLabel(busiestDay.dateISO, {weekday:'long', day:'numeric', month:'short'});
+    const sessionsLabel = busiestDay.feedCount === 1 ? '1 session' : `${formatNumber(busiestDay.feedCount)} sessions`;
+    const detailParts = [];
+    if(busiestDay.breastMinutes > 0){
+      detailParts.push(`${formatNumber(busiestDay.breastMinutes, 1, 1)} min sein`);
+    }
+    if(busiestDay.bottleMl > 0){
+      detailParts.push(`${formatNumber(busiestDay.bottleMl)} ml biberon`);
+    }
+    const sub = detailParts.length ? `${sessionsLabel} | ${detailParts.join(' | ')}` : sessionsLabel;
+    insightItems.push({
+      label: 'Jour le plus actif',
+      value: busyLabel,
+      sub
+    });
+  }
+
+  const totalSessions = (totals.breastSessions || 0) + (totals.bottleSessions || 0);
+  if(totalSessions > 0){
+    const ratioBreast = Math.round((totals.breastSessions / totalSessions) * 100);
+    const ratioBottle = Math.max(0, 100 - ratioBreast);
+    insightItems.push({
+      label: 'Répartition sessions',
+      value: `${ratioBreast}% sein | ${ratioBottle}% biberon`,
+      sub: `${formatNumber(totals.breastSessions)} sein | ${formatNumber(totals.bottleSessions)} biberon`
+    });
+  }
+
+  if(totals.feedCount > 0){
+    const sessionDetails = [];
+    if(totals.breastSessions > 0){
+      const avgPerSessionBreast = totals.breastMinutes / totals.breastSessions;
+      sessionDetails.push(`${formatNumber(avgPerSessionBreast, 1, 1)} min sein`);
+    }
+    if(totals.bottleSessions > 0){
+      const avgPerSessionBottle = totals.bottleMl / totals.bottleSessions;
+      sessionDetails.push(`${formatNumber(avgPerSessionBottle)} ml biberon`);
+    }
+    if(sessionDetails.length){
+      insightItems.push({
+        label: 'Moyenne par session',
+        value: sessionDetails.join(' | '),
+        sub: `${formatNumber(avgFeeds, 1, 1)} sessions / jour`
+      });
+    }
+  }
+
+  const insightsHtml = insightItems.length
+    ? `<div class="stat-insights">${insightItems.map(item => `
+        <div class="stat-insight">
+          <span class="stat-insight-label">${escapeHtml(item.label)}</span>
+          <span class="stat-insight-value">${escapeHtml(item.value)}</span>
+          ${item.sub ? `<span class="stat-insight-sub">${escapeHtml(item.sub)}</span>` : ''}
+        </div>
+      `).join('')}</div>`
+    : '';
+
   statsSummaryEl.innerHTML = `
-    <div class="stat-period">Periode : <strong>${escapeHtml(data.label)}</strong><span>${escapeHtml(dayLabel)}</span></div>
-    <div class="stat-card">
+    <div class="stat-period">
+      <strong>${escapeHtml(data.label)}</strong>
+      <span>${escapeHtml(dayLabel)}</span>
+    </div>
+    <article class="stat-card">
       <span class="stat-title">Sessions</span>
       <span class="stat-value">${formatNumber(totals.feedCount)}</span>
-      <span class="stat-sub">${formatNumber(avgFeeds, 1, 1)} par jour | Sein ${formatNumber(totals.breastSessions)} | Biberon ${formatNumber(totals.bottleSessions)}</span>
-    </div>
-    <div class="stat-card">
+      <span class="stat-sub">${formatNumber(avgFeeds, 1, 1)} / jour | Sein ${formatNumber(totals.breastSessions)} | Biberon ${formatNumber(totals.bottleSessions)}</span>
+    </article>
+    <article class="stat-card">
       <span class="stat-title">Sein</span>
       <span class="stat-value">${formatNumber(totals.breastMinutes, 1, 1)} min</span>
-      <span class="stat-sub">${formatNumber(avgBreastMinutes, 1, 1)} min/jour</span>
-    </div>
-    <div class="stat-card">
+      <span class="stat-sub">${formatNumber(avgBreastMinutes, 1, 1)} min / jour</span>
+    </article>
+    <article class="stat-card">
       <span class="stat-title">Biberon</span>
       <span class="stat-value">${formatNumber(totals.bottleMl)} ml</span>
-      <span class="stat-sub">${formatNumber(avgBottleMl)} ml/jour</span>
-    </div>
+      <span class="stat-sub">${formatNumber(avgBottleMl)} ml / jour</span>
+    </article>
+    ${insightsHtml}
   `;
+  if(statsBreakdownLabel) statsBreakdownLabel.textContent = data?.label || '';
+  renderStatsDailyList(data);
+}
+
+function renderStatsDailyList(stats = null){
+  if(!statsDailyList) return;
+  const data = stats || getFeedStats();
+  const perDay = Array.isArray(data?.perDay) ? data.perDay : [];
+  if(!perDay.length){
+    statsDailyList.innerHTML = '<div class="stat-placeholder">Aucune activite pour cette periode.</div>';
+    return;
+  }
+
+  const hasActivity = perDay.some(day => (day?.feedCount || 0) > 0 || (day?.breastMinutes || 0) > 0 || (day?.bottleMl || 0) > 0);
+  if(!hasActivity){
+    statsDailyList.innerHTML = '<div class="stat-placeholder">Aucune activite pour cette periode.</div>';
+    return;
+  }
+
+  const maxBreast = perDay.reduce((max, day) => Math.max(max, day?.breastMinutes || 0), 0);
+  const maxBottle = perDay.reduce((max, day) => Math.max(max, day?.bottleMl || 0), 0);
+
+  statsDailyList.innerHTML = perDay.map(day => {
+    const dateISO = day?.dateISO || '';
+    const labelShort = formatStatsDayLabel(dateISO, {weekday:'short', day:'numeric'});
+    const labelFull = formatStatsDayLabel(dateISO, {weekday:'long', day:'numeric', month:'short'});
+    const feedCount = day?.feedCount || 0;
+    const breastMinutes = day?.breastMinutes || 0;
+    const bottleMl = day?.bottleMl || 0;
+    const breastPercent = maxBreast > 0 ? Math.round((breastMinutes / maxBreast) * 100) : 0;
+    const bottlePercent = maxBottle > 0 ? Math.round((bottleMl / maxBottle) * 100) : 0;
+    const breastValue = `${formatNumber(breastMinutes, 1, 1)} min`;
+    const bottleValue = `${formatNumber(bottleMl)} ml`;
+    const dayHasActivity = feedCount > 0 || breastMinutes > 0 || bottleMl > 0;
+    const countText = dayHasActivity
+      ? (feedCount === 1 ? '1 session' : `${formatNumber(feedCount)} sessions`)
+      : 'Aucune session';
+
+    const safeBreastPercent = Math.min(100, Math.max(0, breastPercent));
+    const safeBottlePercent = Math.min(100, Math.max(0, bottlePercent));
+
+    return `
+      <article class="stats-day" data-day="${escapeHtml(dateISO)}">
+        <div class="stats-day-head">
+          <span class="stats-day-date" title="${escapeHtml(labelFull)}">${escapeHtml(labelShort)}</span>
+          <span class="stats-day-count">${escapeHtml(countText)}</span>
+        </div>
+        <div class="stats-day-metric">
+          <span class="metric-label"><span class="metric-dot breast"></span> Sein</span>
+          <div class="metric-bar" title="Sein ${escapeHtml(breastValue)}">
+            <div class="stats-bar breast" style="--percent:${safeBreastPercent}%"></div>
+          </div>
+          <span class="metric-value">${escapeHtml(breastValue)}</span>
+        </div>
+        <div class="stats-day-metric">
+          <span class="metric-label"><span class="metric-dot bottle"></span> Biberon</span>
+          <div class="metric-bar" title="Biberon ${escapeHtml(bottleValue)}">
+            <div class="stats-bar bottle" style="--percent:${safeBottlePercent}%"></div>
+          </div>
+          <span class="metric-value">${escapeHtml(bottleValue)}</span>
+        </div>
+      </article>
+    `;
+  }).join('');
 }
 
 function updateStatsChart(force = false){
