@@ -37,6 +37,16 @@ function escapeHtml(value){
     .replace(/'/g, '&#39;');
 }
 
+function formatNumber(value, minimumFractionDigits=0, maximumFractionDigits){
+  const safe = Number.isFinite(value) ? value : 0;
+  const maxDigits = typeof maximumFractionDigits === 'number' ? maximumFractionDigits : minimumFractionDigits;
+  return new Intl.NumberFormat('fr-FR', {
+    minimumFractionDigits,
+    maximumFractionDigits: maxDigits
+  }).format(safe);
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
 // ===== Hero background =====
 const HERO_KEY = 'heroImage';
 const HERO_FALLBACKS = [
@@ -200,6 +210,17 @@ startHeroRotation();
 const panePecho = $('#pane-pecho');
 const paneBiberon = $('#pane-biberon');
 const historyList = $('#history');
+const countPillEl = $('#count-pill');
+const historyRangeBtn = $('#history-range-btn');
+const historyRangeLabel = $('#history-range-label');
+const historyRangeMenu = $('#history-range-menu');
+const historyRangeDateInput = $('#history-range-date');
+const historyRangeOptions = $$('#history-range-menu .range-option[data-range]');
+const statsBtn = $('#btn-stats');
+const statsModal = $('#modal-stats');
+const closeStatsBtn = $('#close-stats');
+const statsCanvas = $('#stats-chart');
+const statsSummaryEl = $('#stats-summary');
 const summaryFeedEl = $('#summary-feed');
 const summaryElimEl = $('#summary-elim');
 const dashboardElimEl = $('#dashboard-elim');
@@ -209,6 +230,7 @@ const infoBtn = $('#info-btn');
 const infoChevron = $('#info-chevron');
 const addManualBtn = $('#add-manual');
 const manualModal = $('#modal-manual');
+const manualTitle = manualModal ? manualModal.querySelector('h2') : null;
 const manualTypeButtons = $$('#manual-type button');
 const manualFeedFields = $('#manual-feed-fields');
 const manualElimFields = $('#manual-elim-fields');
@@ -249,6 +271,9 @@ const summaryMedEl = $('#summary-med');
 let feeds = store.get('feeds', []); // {id,dateISO,source,breastSide,durationSec,amountMl}
 let elims = store.get('elims', []); // {id,dateISO,pee,poop,vomit}
 let meds = store.get('meds', []); // {id,dateISO,name}
+const HISTORY_RANGE_KEY = 'historyRange';
+let historyRange = normalizeHistoryRange(store.get(HISTORY_RANGE_KEY, {mode:'day'}));
+let statsChart = null;
 const TIMER_KEY = 'timerState';
 let manualType = 'feed';
 let timer = 0;
@@ -295,14 +320,466 @@ function replaceDataFromSnapshot(snapshot, {persistLocal = true, skipRender = fa
   }
 }
 
+let historyMenuOutsideHandler = null;
+let historyMenuKeydownHandler = null;
+
+function parseDateInput(value){
+  if(value instanceof Date){
+    return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+  }
+  if(typeof value === 'string'){
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+    if(match){
+      const year = Number(match[1]);
+      const month = Number(match[2]) - 1;
+      const day = Number(match[3]);
+      const candidate = new Date(year, month, day);
+      if(candidate.getFullYear() === year && candidate.getMonth() === month && candidate.getDate() === day){
+        return candidate;
+      }
+    }
+  }
+  const fallback = new Date(value);
+  if(Number.isNaN(fallback.getTime())){
+    return null;
+  }
+  return new Date(fallback.getFullYear(), fallback.getMonth(), fallback.getDate());
+}
+
+function toDateInputValue(date){
+  const parsed = parseDateInput(date);
+  if(!parsed) return '';
+  const y = parsed.getFullYear();
+  const m = String(parsed.getMonth() + 1).padStart(2, '0');
+  const d = String(parsed.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function normalizeHistoryRange(raw){
+  const fallback = {mode:'day'};
+  if(!raw || typeof raw !== 'object'){
+    return {...fallback};
+  }
+  const validModes = ['day','week','month','custom'];
+  const mode = validModes.includes(raw.mode) ? raw.mode : fallback.mode;
+  const result = {mode};
+  if(mode === 'custom'){
+    const parsed = parseDateInput(raw.date);
+    if(parsed){
+      result.date = toDateInputValue(parsed);
+    }else{
+      result.mode = 'day';
+    }
+  }
+  return result;
+}
+
+function getHistoryRangeBounds(range = historyRange){
+  const today = parseDateInput(new Date());
+  today.setHours(0, 0, 0, 0);
+  const todayStart = today.getTime();
+  const todayEnd = todayStart + DAY_MS - 1;
+
+  if(range.mode === 'custom' && range.date){
+    const custom = parseDateInput(range.date);
+    if(custom){
+      custom.setHours(0, 0, 0, 0);
+      const start = custom.getTime();
+      return {start, end: start + DAY_MS - 1};
+    }
+  }
+
+  let start = todayStart;
+  if(range.mode === 'week'){
+    start = todayStart - (6 * DAY_MS);
+  }else if(range.mode === 'month'){
+    start = todayStart - (29 * DAY_MS);
+  }
+
+  return {start, end: todayEnd};
+}
+
+function formatHistoryRangeLabel(range = historyRange){
+  switch(range.mode){
+    case 'week':
+      return '7 derniers jours';
+    case 'month':
+      return '30 derniers jours';
+    case 'custom': {
+      if(range.date){
+        const parsed = parseDateInput(range.date);
+        if(parsed){
+          return parsed.toLocaleDateString('fr-FR', {weekday:'short', day:'numeric', month:'short'});
+        }
+      }
+      return 'Date personnalisée';
+    }
+    case 'day':
+    default:
+      return "Aujourd'hui";
+  }
+}
+
+function syncHistoryRangeUI(){
+  if(historyRangeLabel){
+    historyRangeLabel.textContent = formatHistoryRangeLabel(historyRange);
+  }
+  historyRangeOptions.forEach(option => {
+    const isActive = option.dataset.range === historyRange.mode;
+    option.classList.toggle('active', isActive);
+    option.setAttribute('aria-checked', isActive ? 'true' : 'false');
+  });
+  if(historyRangeDateInput){
+    historyRangeDateInput.disabled = historyRange.mode !== 'custom';
+    const value = historyRange.mode === 'custom' && historyRange.date ? historyRange.date : '';
+    historyRangeDateInput.value = value;
+  }
+}
+
+function setHistoryRange(mode, extra = {}){
+  const next = normalizeHistoryRange({...historyRange, ...extra, mode});
+  historyRange = next;
+  store.set(HISTORY_RANGE_KEY, historyRange);
+  syncHistoryRangeUI();
+  renderHistory();
+}
+
+function closeHistoryRangeMenu(){
+  if(!historyRangeMenu) return;
+  if(!historyRangeMenu.classList.contains('is-open')) return;
+  historyRangeMenu.classList.remove('is-open');
+  historyRangeBtn?.setAttribute('aria-expanded','false');
+  if(historyMenuOutsideHandler){
+    document.removeEventListener('pointerdown', historyMenuOutsideHandler);
+    historyMenuOutsideHandler = null;
+  }
+  if(historyMenuKeydownHandler){
+    document.removeEventListener('keydown', historyMenuKeydownHandler);
+    historyMenuKeydownHandler = null;
+  }
+}
+
+function openHistoryRangeMenu(){
+  if(!historyRangeMenu) return;
+  if(historyRangeMenu.classList.contains('is-open')) return;
+  historyRangeMenu.classList.add('is-open');
+  historyRangeBtn?.setAttribute('aria-expanded','true');
+  historyMenuOutsideHandler = (event) => {
+    if(historyRangeMenu.contains(event.target) || historyRangeBtn?.contains(event.target)){
+      return;
+    }
+    closeHistoryRangeMenu();
+  };
+  historyMenuKeydownHandler = (event) => {
+    if(event.key === 'Escape'){
+      closeHistoryRangeMenu();
+      historyRangeBtn?.focus();
+    }
+  };
+  document.addEventListener('pointerdown', historyMenuOutsideHandler);
+  document.addEventListener('keydown', historyMenuKeydownHandler);
+}
+
+function toggleHistoryRangeMenu(force){
+  if(!historyRangeMenu) return;
+  const shouldOpen = typeof force === 'boolean'
+    ? force
+    : !historyRangeMenu.classList.contains('is-open');
+  if(shouldOpen){
+    openHistoryRangeMenu();
+  }else{
+    closeHistoryRangeMenu();
+  }
+}
+
+function handleHistoryRangeMenuSelection(target){
+  const option = target?.closest?.('.range-option[data-range]');
+  if(!option || !historyRangeMenu?.contains(option)) return;
+  const mode = option.dataset.range;
+  if(!mode) return;
+  if(mode === 'custom'){
+    const fallbackValue = historyRangeDateInput?.value || historyRange.date || toDateInputValue(new Date());
+    if(historyRangeDateInput){
+      historyRangeDateInput.disabled = false;
+      if(!historyRangeDateInput.value){
+        historyRangeDateInput.value = fallbackValue;
+      }
+    }
+    setHistoryRange('custom', {date: fallbackValue});
+    historyRangeDateInput?.focus();
+    return;
+  }
+  setHistoryRange(mode);
+  closeHistoryRangeMenu();
+  historyRangeBtn?.focus();
+}
+
 // ===== History render =====
-function renderHistory(){
-  if(!historyList) return;
-  const all = [
+function getHistoryEntriesForRange(range = historyRange){
+  const bounds = getHistoryRangeBounds(range);
+  return [
     ...feeds.map(f => ({type:'feed', item:f})),
     ...elims.map(e => ({type:'elim', item:e})),
     ...meds.map(m => ({type:'med', item:m}))
-  ].sort((a,b)=> a.item.dateISO < b.item.dateISO ? 1 : -1).slice(0,10);
+  ]
+    .filter(entry => {
+      const timestamp = new Date(entry.item.dateISO).getTime();
+      if(Number.isNaN(timestamp)) return false;
+      if(bounds.start != null && timestamp < bounds.start) return false;
+      if(bounds.end != null && timestamp > bounds.end) return false;
+      return true;
+    })
+    .sort((a,b)=> a.item.dateISO < b.item.dateISO ? 1 : -1);
+}
+
+function getFeedStats(range = historyRange){
+  const bounds = getHistoryRangeBounds(range);
+  const base = {
+    label: formatHistoryRangeLabel(range),
+    perDay: [],
+    totals: {
+      feedCount: 0,
+      breastMinutes: 0,
+      bottleMl: 0,
+      breastSessions: 0,
+      bottleSessions: 0
+    },
+    dayCount: 0
+  };
+  if(!bounds || bounds.start == null || bounds.end == null){
+    return base;
+  }
+
+  const buckets = new Map();
+  for(let ts = bounds.start; ts <= bounds.end; ts += DAY_MS){
+    const day = new Date(ts);
+    day.setHours(0, 0, 0, 0);
+    const key = toDateInputValue(day);
+    const entry = {
+      dateISO: key,
+      feedCount: 0,
+      breastMinutes: 0,
+      bottleMl: 0,
+      breastSessions: 0,
+      bottleSessions: 0
+    };
+    base.perDay.push(entry);
+    buckets.set(key, entry);
+  }
+
+  const feedEntries = getHistoryEntriesForRange(range).filter(entry => entry.type === 'feed');
+  for(const entry of feedEntries){
+    const parsed = parseDateInput(entry.item.dateISO);
+    if(!parsed) continue;
+    const key = toDateInputValue(parsed);
+    const bucket = buckets.get(key);
+    if(!bucket) continue;
+
+    bucket.feedCount += 1;
+    base.totals.feedCount += 1;
+
+    if(entry.item.source === 'breast'){
+      const minutes = (entry.item.durationSec || 0) / 60;
+      bucket.breastMinutes += minutes;
+      bucket.breastSessions += 1;
+      base.totals.breastMinutes += minutes;
+      base.totals.breastSessions += 1;
+    }else if(entry.item.source === 'bottle'){
+      const ml = Number(entry.item.amountMl || 0);
+      if(Number.isFinite(ml)){
+        bucket.bottleMl += ml;
+        bucket.bottleSessions += 1;
+        base.totals.bottleMl += ml;
+        base.totals.bottleSessions += 1;
+      }
+    }
+  }
+
+  base.perDay.forEach(day => {
+    day.breastMinutes = Number(day.breastMinutes.toFixed(1));
+    day.bottleMl = Number(day.bottleMl.toFixed(0));
+  });
+  base.totals.breastMinutes = Number(base.totals.breastMinutes.toFixed(1));
+  base.totals.bottleMl = Number(base.totals.bottleMl.toFixed(0));
+  base.dayCount = base.perDay.length;
+  return base;
+}
+
+function getStatsChartData(range = historyRange){
+  const stats = getFeedStats(range);
+  const labels = stats.perDay.map(day => {
+    const parsed = parseDateInput(day.dateISO);
+    return parsed
+      ? parsed.toLocaleDateString('fr-FR', {weekday:'short', day:'numeric'})
+      : day.dateISO;
+  });
+  const breastMinutes = stats.perDay.map(day => day.breastMinutes);
+  const bottleMl = stats.perDay.map(day => day.bottleMl);
+  return {
+    labels,
+    breastMinutes,
+    bottleMl,
+    rangeLabel: stats.label,
+    stats
+  };
+}
+
+function updateStatsSummary(stats = null){
+  if(!statsSummaryEl) return;
+  const data = stats || getFeedStats();
+  const totals = data.totals;
+  const dayCount = Math.max(data.dayCount || (data.perDay?.length ?? 0), 1);
+  const hasData = totals.feedCount > 0 || totals.breastMinutes > 0 || totals.bottleMl > 0;
+  if(!hasData){
+    statsSummaryEl.innerHTML = '<div class="stat-placeholder">Aucune donnee pour cette periode.</div>';
+    return;
+  }
+
+  const dayLabel = dayCount === 1 ? '1 jour' : `${dayCount} jours`;
+  const avgFeeds = totals.feedCount / dayCount;
+  const avgBreastMinutes = totals.breastMinutes / dayCount;
+  const avgBottleMl = totals.bottleMl / dayCount;
+
+  statsSummaryEl.innerHTML = `
+    <div class="stat-period">Periode : <strong>${escapeHtml(data.label)}</strong><span>${escapeHtml(dayLabel)}</span></div>
+    <div class="stat-card">
+      <span class="stat-title">Sessions</span>
+      <span class="stat-value">${formatNumber(totals.feedCount)}</span>
+      <span class="stat-sub">${formatNumber(avgFeeds, 1, 1)} par jour | Sein ${formatNumber(totals.breastSessions)} | Biberon ${formatNumber(totals.bottleSessions)}</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-title">Sein</span>
+      <span class="stat-value">${formatNumber(totals.breastMinutes, 1, 1)} min</span>
+      <span class="stat-sub">${formatNumber(avgBreastMinutes, 1, 1)} min/jour</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-title">Biberon</span>
+      <span class="stat-value">${formatNumber(totals.bottleMl)} ml</span>
+      <span class="stat-sub">${formatNumber(avgBottleMl)} ml/jour</span>
+    </div>
+  `;
+}
+
+function updateStatsChart(force = false){
+  const summary = getStatsChartData();
+  updateStatsSummary(summary.stats);
+
+  if(!statsCanvas || typeof Chart === 'undefined') return;
+  if(!statsChart && !force) return;
+  const ctx = statsCanvas.getContext('2d');
+  if(!ctx) return;
+
+  if(!statsChart){
+    statsChart = new Chart(ctx, {
+      data: {
+        labels: summary.labels,
+        datasets: [
+          {
+            type: 'bar',
+            label: 'Sein (minutes)',
+            data: summary.breastMinutes,
+            backgroundColor: 'rgba(37, 99, 235, 0.55)',
+            borderColor: 'rgba(37, 99, 235, 0.85)',
+            borderWidth: 1,
+            borderRadius: 12,
+            maxBarThickness: 48,
+            yAxisID: 'y',
+            order: 2
+          },
+          {
+            type: 'line',
+            label: 'Biberon (ml)',
+            data: summary.bottleMl,
+            borderColor: 'rgba(249, 115, 22, 0.9)',
+            backgroundColor: 'rgba(249, 115, 22, 0.2)',
+            borderWidth: 3,
+            tension: 0.35,
+            pointRadius: 4,
+            pointHoverRadius: 6,
+            fill: false,
+            yAxisID: 'y1',
+            order: 1
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: {mode:'index', intersect:false},
+        scales: {
+          y: {
+            type: 'linear',
+            position: 'left',
+            beginAtZero: true,
+            title: {display:true, text:'Minutes sein'},
+            ticks: {precision:0},
+            grid: {color:'rgba(148, 163, 184, 0.25)'}
+          },
+          y1: {
+            type: 'linear',
+            position: 'right',
+            beginAtZero: true,
+            title: {display:true, text:'Millilitres biberon'},
+            ticks: {precision:0},
+            grid: {drawOnChartArea:false}
+          },
+          x: {
+            grid: {display:false},
+            ticks: {
+              color: '#1f2937',
+              font: {weight:'600'}
+            }
+          }
+        },
+        plugins: {
+          legend: {
+            display: true,
+            labels: {usePointStyle:true}
+          },
+          tooltip: {
+            callbacks: {
+              label(context){
+                const value = context.parsed.y ?? 0;
+                if(context.dataset?.yAxisID === 'y1'){
+                  return `${formatNumber(value)} ml`;
+                }
+                return `${formatNumber(value, 1, 1)} min`;
+              }
+            }
+          },
+          title: {
+            display: true,
+            text: `Periode : ${summary.rangeLabel}`,
+            color: '#0f172a',
+            font: {
+              size: 14,
+              weight: '600'
+            },
+            padding: {
+              top: 6,
+              bottom: 12
+            }
+          }
+        }
+      }
+    });
+  }else{
+    statsChart.data.labels = summary.labels;
+    if(statsChart.data.datasets[0]){
+      statsChart.data.datasets[0].data = summary.breastMinutes;
+    }
+    if(statsChart.data.datasets[1]){
+      statsChart.data.datasets[1].data = summary.bottleMl;
+    }
+    if(statsChart.options?.plugins?.title){
+      statsChart.options.plugins.title.text = `Periode : ${summary.rangeLabel}`;
+    }
+    statsChart.update();
+  }
+}
+function renderHistory(){
+  if(!historyList) return;
+  const all = getHistoryEntriesForRange();
 
   historyList.innerHTML = '';
   if(!all.length){
@@ -351,11 +828,57 @@ function renderHistory(){
       requestAnimationFrame(()=> div.classList.remove('enter'));
     }
   }
-  $('#count-pill').textContent = feeds.length + elims.length + meds.length;
+  if(countPillEl){
+    countPillEl.textContent = String(all.length);
+  }
   updateSummaries();
   renderFeedHistory();
+  updateStatsChart();
 }
+syncHistoryRangeUI();
 renderHistory();
+
+historyRangeBtn?.addEventListener('click', (event) => {
+  event.preventDefault();
+  toggleHistoryRangeMenu();
+});
+
+historyRangeMenu?.addEventListener('click', (event) => {
+  handleHistoryRangeMenuSelection(event.target);
+});
+
+historyRangeMenu?.addEventListener('keydown', (event) => {
+  if(event.key === 'Enter' || event.key === ' '){
+    event.preventDefault();
+    handleHistoryRangeMenuSelection(event.target);
+  }
+});
+
+historyRangeMenu?.addEventListener('focusout', (event) => {
+  const nextTarget = event.relatedTarget;
+  if(nextTarget && historyRangeMenu?.contains(nextTarget)){
+    return;
+  }
+  closeHistoryRangeMenu();
+});
+
+historyRangeDateInput?.addEventListener('change', (event) => {
+  const value = event.target.value;
+  if(!value) return;
+  setHistoryRange('custom', {date: value});
+  closeHistoryRangeMenu();
+  historyRangeBtn?.focus();
+});
+
+statsBtn?.addEventListener('click', () => {
+  openModal('#modal-stats');
+  updateStatsSummary();
+  requestAnimationFrame(() => updateStatsChart(true));
+});
+
+closeStatsBtn?.addEventListener('click', () => {
+  closeModal('#modal-stats');
+});
 
 historyList?.addEventListener('click', (e)=>{
 
@@ -919,8 +1442,9 @@ function setManualMode(isEdit){
   if(saveManualBtn){
     saveManualBtn.textContent = isEdit ? 'Mettre à jour' : 'Enregistrer';
   }
-  if(manualTitle){
-    manualTitle.textContent = isEdit ? 'Modifier un enregistrement' : 'Nouvel enregistrement';
+  const titleNode = manualTitle || manualModal?.querySelector('h2');
+  if(titleNode){
+    titleNode.textContent = isEdit ? 'Modifier un enregistrement' : 'Nouvel enregistrement';
   }
   manualModal?.classList?.toggle('is-editing', isEdit);
 }
