@@ -820,9 +820,14 @@ function renderHistory(){
           <strong>${title}</strong>
           <div class="item-meta">${metaParts.join('')}</div>
         </div>
-        <button class="item-delete" data-type="${row.type}" data-id="${row.item.id}" aria-label="Supprimer l'entrée">
-          <span>×</span>
-        </button>
+        <div class="item-actions">
+          <button class="item-action item-edit" data-type="${row.type}" data-id="${row.item.id}" aria-label="Modifier l'entrée">
+            <span>&#9998;</span>
+          </button>
+          <button class="item-delete" data-type="${row.type}" data-id="${row.item.id}" aria-label="Supprimer l'entrée">
+            <span>×</span>
+          </button>
+        </div>
       `;
       historyList.appendChild(div);
       requestAnimationFrame(()=> div.classList.remove('enter'));
