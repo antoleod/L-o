@@ -1650,24 +1650,42 @@ function showProfile(){
 infoBtn?.addEventListener('click', showProfile);
 infoChevron?.addEventListener('click', showProfile);
 
-function handleBackgroundChange(event){
+function handleBackgroundChange(event) {
   const input = event.target;
   const file = input.files && input.files[0];
-  if(!file) return;
-  const reader = new FileReader();
-  reader.onload = () => {
-    const dataUrl = reader.result;
-    if(typeof dataUrl === 'string'){
-      setHeroImage(dataUrl).then(ok => {
-        if(ok){
-          saveHeroMeta({index:0, lastSwitch: Date.now()});
+  if (!file) return;
+
+  // Verificar si Firebase Storage está disponible
+  if (window.firebase && typeof window.firebase.storage === 'function') {
+    const storageRef = window.firebase.storage().ref();
+    // Usamos una ruta fija para la imagen de perfil, así siempre se sobrescribe la misma.
+    const avatarRef = storageRef.child('backgrounds/leo-main-avatar.jpg');
+
+    setSaveIndicator('saving', 'Chargement de la photo...');
+
+    avatarRef.put(file)
+      .then(snapshot => snapshot.ref.getDownloadURL())
+      .then(downloadURL => {
+        console.log('Image uploaded to Firebase, URL:', downloadURL);
+        setSaveIndicator('synced', 'Photo sauvegardée !');
+        return setHeroImage(downloadURL); // Usar la URL de Firebase
+      })
+      .then(ok => {
+        if (ok) {
+          saveHeroMeta({ index: 0, lastSwitch: Date.now() });
           startHeroRotation();
         }
+      })
+      .catch(error => {
+        console.error("Error uploading to Firebase Storage:", error);
+        setSaveIndicator('error', 'Erreur de chargement');
       });
-    }
-    input.value = '';
-  };
-  reader.readAsDataURL(file);
+  } else {
+    console.warn("Firebase Storage not available. Image will not be saved to the cloud.");
+    setSaveIndicator('error', 'Stockage cloud indisponible');
+  }
+
+  input.value = ''; // Limpiar el input para poder seleccionar el mismo archivo de nuevo
 }
 
 // ===== Manual entry =====

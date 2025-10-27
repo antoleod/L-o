@@ -5,9 +5,7 @@ const PRECACHE_URLS = [
   './',
   './index.html',
   './css/styles.css',
-  './js/app.js',
-  './js/firebase_reports.js',
-  './js/remote_reports.js',
+  './js/app.js', // Assuming this is the correct sync script
   './js/firebase_reports.js', // Assuming this is the correct sync script
   './img/baby.jpg',
   './img/baby1.jpg'
@@ -32,19 +30,11 @@ self.addEventListener('activate', event => {
 });
 
 self.addEventListener('fetch', event => {
-  if(event.request.method !== 'GET'){
   // Ignore non-GET requests and requests to other origins (like chrome-extension://)
   if (
     event.request.method !== 'GET' ||
     !event.request.url.startsWith(self.location.origin)
   ) {
-    return;
-  }
-
-  if(event.request.mode === 'navigate'){
-  // For navigation requests, use a network-first strategy.
-  // This ensures the user always gets the latest HTML.
-  if (event.request.mode === 'navigate') {
     event.respondWith(
       fetch(event.request)
         .then(response => {
@@ -52,29 +42,34 @@ self.addEventListener('fetch', event => {
           caches.open(RUNTIME).then(cache => cache.put(event.request, copy));
           return response;
         })
-        .catch(() => caches.match(event.request).then(match => match || caches.match('./index.html')))
+        .catch(() => {
+          return caches.match(event.request).then(match => {
+            // For navigation, if network fails, serve index.html from cache.
+            if (event.request.mode === 'navigate') {
+              return match || caches.match('./index.html');
+            }
+            return match;
+          });
+        })
     );
     return;
   }
 
-  // For other assets, use a cache-first strategy.
+  // For other assets (CSS, JS, Images), use a cache-first strategy.
   event.respondWith(
     caches.match(event.request).then(cached => {
-      if(cached){
-        return cached;
-      }
-      return fetch(event.request)
-        .then(response => {
-          const copy = response.clone();
-          caches.open(RUNTIME).then(cache => cache.put(event.request, copy));
+      return cached || fetch(event.request).then(response => {
+        return caches.open(RUNTIME).then(cache => {
+          // Cache the new resource and return it
+          cache.put(event.request, response.clone());
           return response;
-        })
-        .catch(() => {
-          if(event.request.destination === 'image'){
-            return caches.match('./img/baby.jpg');
-          }
-          return cached || Response.error();
         });
+      }).catch(() => {
+        // If both cache and network fail for an image, return a fallback image.
+        if (event.request.destination === 'image') {
+          return caches.match('./img/baby.jpg');
+        }
+      });
     })
   );
 });

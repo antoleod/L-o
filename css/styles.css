@@ -211,33 +211,28 @@ h1{font-size:var(--title-size);font-weight:800;margin:8px 0 22px;letter-spacing:
 .btn-success{--btn-border-glow:linear-gradient(120deg, rgba(109,255,198,.9), rgba(16,201,131,.8), rgba(255,255,255,.9));background:linear-gradient(150deg, rgba(11,52,44,.55), rgba(24,141,96,.55));color:#effff9;text-shadow:0 0 16px rgba(96,255,210,.65)}
 .btn-warning{--btn-border-glow:linear-gradient(120deg, rgba(255,196,120,.9), rgba(255,118,102,.75), rgba(255,255,255,.85));background:linear-gradient(150deg, rgba(64,34,10,.55), rgba(201,108,32,.58));color:#fff4e6;text-shadow:0 0 14px rgba(255,178,102,.75)}
 .btn-ghost {
-  background: linear-gradient(160deg, rgba(230, 240, 255, 0.22), rgba(200, 220, 255, 0.055)); /* 45% más transparente */
-  color: var(--text);
-  border-color: transparent; /* El borde ahora es transparente para mostrar la animación */
-  box-shadow: 0 12px 32px rgba(20, 24, 40, .12), inset 0 0 0 1px rgba(255,255,255,.15);
-  position: relative;
-  overflow: hidden;
+  background: rgba(255, 255, 255, 0.35);
+  color: var(--text, #0e1b29);
+  border: 1px solid rgba(198, 209, 223, 0.6);
+  box-shadow: 0 12px 28px rgba(20, 24, 40, 0.1);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: background .2s ease, color .2s ease, border-color .2s ease, box-shadow .2s ease, transform .2s ease;
 }
-.btn-ghost::before {
-  content: "";
-  position: absolute;
-  z-index: -2; /* Detrás del contenido del botón */
-  inset: 0;
-  border-radius: inherit;
-  padding: 2px; /* Grosor del borde animado */
-  padding: 3px; /* Grosor del borde animado */
-  background: linear-gradient(
-    90deg,
-    rgba(255, 60, 60, 0.7) 0%,
-    rgba(255, 0, 0, 1) 50%,
-    rgba(255, 60, 60, 0.7) 100%
-  );
-  background-size: 200% 100%;
-  animation: shimmer-border 2s ease-in-out infinite; /* Animación más rápida */
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-          mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-          mask-composite: exclude;
+
+@media (hover: hover) {
+  .btn-ghost:hover {
+    background: rgba(255, 255, 255, 0.6);
+    border-color: rgba(120, 182, 255, 0.5);
+    color: var(--primary, #0a84ff);
+    transform: translateY(-2px);
+    box-shadow: 0 16px 32px rgba(12, 24, 40, 0.15);
+  }
+}
+
+.btn-ghost:active {
+  transform: translateY(0);
+  box-shadow: 0 8px 20px rgba(20, 24, 40, 0.12);
 }
 .view-switcher{position:relative;display:inline-flex;align-items:center;gap:10px;flex-wrap:wrap}
 .view-switcher .pill{display:inline-flex;align-items:center;justify-content:center}
