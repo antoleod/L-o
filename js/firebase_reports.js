@@ -89,25 +89,6 @@
       }
     },
 
-    // Las funciones addEntry y removeEntry ya no son necesarias si `app.js`
-    // actualiza el estado local y luego llama a `saveAll`.
-    // Esto simplifica la lógica y confía en el listener `onSnapshot` para la sincronización.
-
-    /**
-     * Cierra la conexión en tiempo real.
-     */
-    disconnect() {
-      if (unsubscribe) {
-        unsubscribe();
-        unsubscribe = null;
-        console.log('Desconectado de Firestore.');
-      }
-    }
-  };
-
-  if (typeof module !== 'undefined' && module.exports) {
-    module.exports = api;
-  } else {
-    global.FirebaseReports = api;
+    // ... (el resto de las funciones de la API de Firebase)
   }
-})(typeof window !== 'undefined' ? window : globalThis);
+})();

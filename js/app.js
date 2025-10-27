@@ -223,7 +223,12 @@ const statsCanvas = $('#stats-chart');
 const statsSummaryEl = $('#stats-summary');
 const statsDailyList = $('#stats-day-list');
 const statsBreakdownLabel = $('#stats-breakdown-label');
-const summaryFeedEl = $('#summary-feed');
+const saveIndicatorEl = $('#save-indicator');
+const saveLabelEl = $('#save-label');
+const exportReportsBtn = $('#export-pdf');
+const footerAddManualBtn = $('#footer-add-manual');
+const footerStatsBtn = $('#footer-stats');
+const footerExportBtn = $('#footer-export');
 const summaryElimEl = $('#summary-elim');
 const dashboardElimEl = $('#dashboard-elim');
 const bgPicker = $('#bg-picker');
@@ -231,6 +236,7 @@ const avatarBtn = $('#avatar-btn');
 const infoBtn = $('#info-btn');
 const infoChevron = $('#info-chevron');
 const addManualBtn = $('#add-manual');
+const summaryFeedEl = $('#summary-feed');
 const manualModal = $('#modal-manual');
 const manualTitle = manualModal ? manualModal.querySelector('h2') : null;
 const manualTypeButtons = $$('#manual-type button');
@@ -260,6 +266,19 @@ const manualMedOtherField = $('#manual-med-other-field');
 const manualMedOtherInput = $('#manual-med-other');
 const manualMedDose = $('#manual-med-dose');
 const manualMedNotes = $('#manual-med-notes');
+
+const SAVE_MESSAGES = {
+  idle: 'Prêt',
+  saving: 'Synchronisation…',
+  offline: 'Enregistré localement',
+  error: 'Erreur de synchronisation',
+  synced: 'Sauvegardé dans le cloud'
+};
+
+let saveIndicatorResetTimer = null;
+const remoteSyncQueue = [];
+let remoteSyncInFlight = false;
+let firebaseSyncConfigured = false;
 const medsBtn = $('#btn-med');
 const closeMedBtn = $('#close-med');
 const cancelMedBtn = $('#cancel-med');
@@ -290,16 +309,146 @@ function cloneDataSnapshot(){
   };
 }
 
+function isOnline(){
+  return navigator.onLine !== false;
+}
+
+function setSaveIndicator(state = 'idle', message){
+  if(!saveIndicatorEl || !saveLabelEl) return;
+  if(saveIndicatorResetTimer){
+    clearTimeout(saveIndicatorResetTimer);
+    saveIndicatorResetTimer = null;
+  }
+  saveIndicatorEl.dataset.state = state || 'idle';
+  saveLabelEl.textContent = message || SAVE_MESSAGES[state] || SAVE_MESSAGES.idle;
+  if(state === 'synced'){
+    saveIndicatorResetTimer = setTimeout(() => {
+      if(saveIndicatorEl && saveIndicatorEl.dataset.state === 'synced'){
+        saveIndicatorEl.dataset.state = 'idle';
+        saveLabelEl.textContent = SAVE_MESSAGES.idle;
+      }
+    }, 4000);
+  }
+}
+
+function updateOfflineIndicator(){
+  if(!saveIndicatorEl) return;
+  const offline = !isOnline();
+  saveIndicatorEl.classList.toggle('is-offline', offline);
+  if(offline && saveIndicatorEl.dataset.state !== 'saving'){
+    setSaveIndicator('idle', SAVE_MESSAGES.offline);
+  }else if(!offline && saveIndicatorEl.dataset.state === 'idle' && saveLabelEl && saveLabelEl.textContent === SAVE_MESSAGES.offline){
+    setSaveIndicator('idle', SAVE_MESSAGES.idle);
+  }
+}
+
+function enqueueRemoteSync(reason = 'Sync update'){
+  if(!window.FirebaseReports){
+    setSaveIndicator('idle', SAVE_MESSAGES.offline);
+    return;
+  }
+  const payload = cloneDataSnapshot();
+  remoteSyncQueue.length = 0;
+  remoteSyncQueue.push({payload, reason, attempt:0});
+  processRemoteSync();
+}
+
+function processRemoteSync(){
+  if(remoteSyncInFlight) return;
+  if(!remoteSyncQueue.length) return;
+  if(!window.FirebaseReports || !firebaseSyncConfigured){
+    return;
+  }
+  if(!isOnline()){
+    updateOfflineIndicator();
+    return;
+  }
+  const job = remoteSyncQueue.pop();
+  remoteSyncQueue.length = 0;
+  remoteSyncInFlight = true;
+  setSaveIndicator('saving', SAVE_MESSAGES.saving);
+  window.FirebaseReports.saveAll(job.payload, job.reason)
+    .then(() => {
+      remoteSyncInFlight = false;
+      setSaveIndicator('synced', SAVE_MESSAGES.synced);
+      processRemoteSync();
+    })
+    .catch(err => {
+      remoteSyncInFlight = false;
+      console.error('Firebase save failed:', err);
+      setSaveIndicator('error', SAVE_MESSAGES.error);
+      remoteSyncQueue.push({
+        payload: job.payload,
+        reason: job.reason,
+        attempt: (job.attempt || 0) + 1
+      });
+      const retryDelay = Math.min(15000, 3000 * ((job.attempt || 0) + 1));
+      setTimeout(processRemoteSync, retryDelay);
+    });
+}
+
+function exportReports(){
+  try{
+    const snapshot = cloneDataSnapshot();
+    snapshot.exportedAt = new Date().toISOString();
+    const json = JSON.stringify(snapshot, null, 2);
+    const blob = new Blob([json], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const now = new Date();
+    const pad = (val) => String(val).padStart(2, '0');
+    const filename = `leo-reports-${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}.json`;
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    requestAnimationFrame(() => {
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    });
+    setSaveIndicator('synced', 'Export téléchargé');
+  }catch(err){
+    console.error('Export failed:', err);
+    setSaveIndicator('error', 'Export indisponible');
+  }
+}
+
+function exportReports(){
+  try{
+    const snapshot = cloneDataSnapshot();
+    snapshot.exportedAt = new Date().toISOString();
+    const json = JSON.stringify(snapshot, null, 2);
+    const blob = new Blob([json], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const now = new Date();
+    const pad = (val) => String(val).padStart(2, '0');
+    const filename = `leo-reports-${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}.json`;
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    requestAnimationFrame(() => {
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    });
+    setSaveIndicator('synced', 'Export téléchargé');
+  }catch(err){
+    console.error('Export failed:', err);
+    setSaveIndicator('error', 'Export indisponible');
+  }
+}
+
 function persistAll(reason = 'Sync update'){
   store.set('feeds', feeds);
   store.set('elims', elims);
   store.set('meds', meds);
-  // La sincronización con Firebase se hace a través de un listener,
-  // pero guardamos explícitamente para asegurar que los cambios se envíen.
-  if (window.FirebaseReports) {
-    const payload = cloneDataSnapshot();
-    window.FirebaseReports.saveAll(payload, reason).catch(err => console.error('Firebase save failed:', err));
+  if(isOnline()){
+    setSaveIndicator('saving', SAVE_MESSAGES.saving);
+  }else{
+    setSaveIndicator('idle', SAVE_MESSAGES.offline);
   }
+  enqueueRemoteSync(reason);
 }
 
 function replaceDataFromSnapshot(snapshot, {persistLocal = true, skipRender = false} = {}){
@@ -1916,20 +2065,39 @@ function saveManualEntry(){
 
 function initFirebaseSync() {
   if (window.firebase && window.FirebaseReports) {
-    const firebaseApp = window.firebase.app();
-    window.FirebaseReports.init(firebaseApp, 'leo-reports'); // Usamos 'leo-reports' como ID del documento
+    try {
+      const firebaseApp = window.firebase.app();
+      window.FirebaseReports.init(firebaseApp, 'leo-reports'); // Usamos 'leo-reports' como ID del documento
+      firebaseSyncConfigured = true;
+      processRemoteSync();
+    } catch (err) {
+      console.error('Firebase init error:', err);
+      firebaseSyncConfigured = false;
+      setSaveIndicator('error', SAVE_MESSAGES.error);
+    }
 
     window.FirebaseReports.on((event, payload) => {
       if (event === 'synced') {
         console.log('Datos sincronizados desde Firebase:', payload);
-        // Reemplaza los datos locales con los de Firebase y renderiza
         replaceDataFromSnapshot(payload, { persistLocal: true, skipRender: false });
+        if(isOnline()){
+          setSaveIndicator('synced', 'Synchronisé depuis le cloud');
+        }
+      } else if (event === 'configured') {
+        firebaseSyncConfigured = true;
+        processRemoteSync();
+      } else if (event === 'error') {
+        setSaveIndicator('error', SAVE_MESSAGES.error);
       }
     });
+  }else{
+    setSaveIndicator('idle', SAVE_MESSAGES.offline);
   }
 }
-
 addManualBtn?.addEventListener('click', ()=> openManualModal({mode:'create', type:'feed'}));
+footerAddManualBtn?.addEventListener('click', ()=> openManualModal({mode:'create', type:'feed'}));
+exportReportsBtn?.addEventListener('click', exportReports);
+footerStatsBtn?.addEventListener('click', () => statsBtn?.click());
 closeManualBtn?.addEventListener('click', closeManualModal);
 cancelManualBtn?.addEventListener('click', closeManualModal);
 saveManualBtn?.addEventListener('click', saveManualEntry);
@@ -1943,3 +2111,23 @@ if(manualModal){
 }
 
 initFirebaseSync();
+
+setSaveIndicator('idle', isOnline() ? SAVE_MESSAGES.idle : SAVE_MESSAGES.offline);
+updateOfflineIndicator();
+
+window.addEventListener('online', () => {
+  updateOfflineIndicator();
+  processRemoteSync();
+});
+
+window.addEventListener('offline', () => {
+  updateOfflineIndicator();
+});
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(err => {
+      console.error('Service worker registration failed:', err);
+    });
+  });
+}
