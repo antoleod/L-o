@@ -35,9 +35,27 @@
     <!-- Historial -->
     <div class="stack">
       <div class="section-head">
-        <div style="display:flex;align-items:center;gap:8px">
-          <strong>Aujourd'hui</strong>
+        <div class="view-switcher">
+          <button class="icon-btn" id="history-range-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Changer la période du rapport">
+            <span class="icon-calendar" aria-hidden="true"></span>
+            <span class="label" id="history-range-label">Aujourd'hui</span>
+            <span class="caret" aria-hidden="true">▾</span>
+          </button>
           <span class="pill" id="count-pill">0</span>
+          <div class="range-menu" id="history-range-menu" role="menu" aria-labelledby="history-range-btn">
+            <button class="range-option active" type="button" data-range="day" role="menuitemradio" aria-checked="true">
+              <span class="icon-calendar" aria-hidden="true"></span>
+              <span>Jour actuel</span>
+            </button>
+            <button class="range-option" type="button" data-range="week" role="menuitemradio" aria-checked="false">
+              <span class="icon-calendar" aria-hidden="true"></span>
+              <span>7 derniers jours</span>
+            </button>
+            <button class="range-option" type="button" data-range="month" role="menuitemradio" aria-checked="false">
+              <span class="icon-calendar" aria-hidden="true"></span>
+              <span>30 derniers jours</span>
+            </button>
+          </div>
         </div>
         <button class="btn btn-ghost btn-compact" id="add-manual" type="button">Ajouter manuel</button>
       </div>

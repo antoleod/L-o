@@ -200,6 +200,11 @@ startHeroRotation();
 const panePecho = $('#pane-pecho');
 const paneBiberon = $('#pane-biberon');
 const historyList = $('#history');
+const historyRangeBtn = $('#history-range-btn');
+const historyRangeLabelEl = $('#history-range-label');
+const historyRangeMenu = $('#history-range-menu');
+const historyRangeOptions = historyRangeMenu ? Array.from(historyRangeMenu.querySelectorAll('[data-range]')) : [];
+const countPillEl = $('#count-pill');
 const summaryFeedEl = $('#summary-feed');
 const summaryElimEl = $('#summary-elim');
 const dashboardElimEl = $('#dashboard-elim');
@@ -249,6 +254,8 @@ const summaryMedEl = $('#summary-med');
 let feeds = store.get('feeds', []); // {id,dateISO,source,breastSide,durationSec,amountMl}
 let elims = store.get('elims', []); // {id,dateISO,pee,poop,vomit}
 let meds = store.get('meds', []); // {id,dateISO,name}
+let historyRange = 'day';
+let historyRangeMenuOpen = false;
 const TIMER_KEY = 'timerState';
 let manualType = 'feed';
 let timer = 0;
@@ -326,22 +333,65 @@ function datasetHasLocalExtras(local, remote){
 }
 
 // ===== History render =====
+const HISTORY_LABELS = {
+  day: "Aujourd'hui",
+  week: '7 derniers jours',
+  month: '30 derniers jours'
+};
+
+const HISTORY_EMPTY_MESSAGES = {
+  day: "Aucun enregistrement pour aujourd'hui.",
+  week: 'Aucun enregistrement sur les 7 derniers jours.',
+  month: 'Aucun enregistrement sur les 30 derniers jours.'
+};
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function getHistoryRangeWindow(range){
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const startOfToday = todayStart.getTime();
+  const endOfToday = startOfToday + DAY_MS;
+  switch(range){
+    case 'week':
+      return {start: startOfToday - (6 * DAY_MS), end: endOfToday};
+    case 'month':
+      return {start: startOfToday - (29 * DAY_MS), end: endOfToday};
+    case 'day':
+    default:
+      return {start: startOfToday, end: endOfToday};
+  }
+}
+
+function isEntryWithinRange(dateISO, range, windowBounds){
+  if(!dateISO) return false;
+  const time = new Date(dateISO).getTime();
+  if(Number.isNaN(time)) return false;
+  const bounds = windowBounds || getHistoryRangeWindow(range);
+  const {start, end} = bounds;
+  return time >= start && time < end;
+}
+
 function renderHistory(){
   if(!historyList) return;
   const all = [
     ...feeds.map(f => ({type:'feed', item:f})),
     ...elims.map(e => ({type:'elim', item:e})),
     ...meds.map(m => ({type:'med', item:m}))
-  ].sort((a,b)=> a.item.dateISO < b.item.dateISO ? 1 : -1).slice(0,10);
+  ].sort((a,b)=> a.item.dateISO < b.item.dateISO ? 1 : -1);
+  const rangeBounds = getHistoryRangeWindow(historyRange);
+  const filtered = all.filter(entry => isEntryWithinRange(entry.item.dateISO, historyRange, rangeBounds));
+  const limited = filtered.slice(0, 20);
 
   historyList.innerHTML = '';
-  if(!all.length){
+  if(!limited.length){
     const empty = document.createElement('div');
     empty.className = 'history-empty';
-    empty.textContent = "Aucun enregistrement pour le moment. Ajoutez un premier suivi !";
+    const msg = HISTORY_EMPTY_MESSAGES[historyRange] || "Aucun enregistrement pour le moment. Ajoutez un premier suivi !";
+    empty.textContent = msg;
     historyList.appendChild(empty);
   }else{
-    for(const row of all){
+    for(const row of limited){
       const div = document.createElement('div');
       div.className = 'item enter';
       const dateString = new Date(row.item.dateISO).toLocaleString();
@@ -381,11 +431,75 @@ function renderHistory(){
       requestAnimationFrame(()=> div.classList.remove('enter'));
     }
   }
-  $('#count-pill').textContent = feeds.length + elims.length + meds.length;
+  if(countPillEl){
+    countPillEl.textContent = String(filtered.length);
+    const label = HISTORY_LABELS[historyRange] || '';
+    countPillEl.setAttribute('title', label ? `Total visibles - ${label}` : 'Total visibles');
+  }
   updateSummaries();
   renderFeedHistory();
 }
+
+function toggleHistoryRangeMenu(force){
+  const next = typeof force === 'boolean' ? force : !historyRangeMenuOpen;
+  historyRangeMenuOpen = !!next && !!historyRangeMenu && !!historyRangeBtn;
+  if(!historyRangeMenu || !historyRangeBtn) return;
+  historyRangeBtn.setAttribute('aria-expanded', historyRangeMenuOpen ? 'true' : 'false');
+  historyRangeMenu.classList.toggle('is-open', historyRangeMenuOpen);
+}
+
+function setHistoryRange(range, {silent=false} = {}){
+  if(!HISTORY_LABELS[range]){
+    range = 'day';
+  }
+  historyRange = range;
+  if(historyRangeLabelEl){
+    historyRangeLabelEl.textContent = HISTORY_LABELS[range];
+  }
+  historyRangeOptions.forEach(btn => {
+    const active = btn.dataset.range === range;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-checked', active ? 'true' : 'false');
+  });
+  toggleHistoryRangeMenu(false);
+  if(countPillEl){
+    const label = HISTORY_LABELS[range] || '';
+    countPillEl.setAttribute('title', label ? `Total visibles - ${label}` : 'Total visibles');
+  }
+  if(!silent){
+    renderHistory();
+  }
+}
 renderHistory();
+
+if(historyRangeBtn && historyRangeMenu){
+  historyRangeBtn.addEventListener('click', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    toggleHistoryRangeMenu();
+  });
+  historyRangeMenu.addEventListener('click', e => e.stopPropagation());
+  historyRangeOptions.forEach(btn => {
+    btn.addEventListener('click', ()=>{
+      const range = btn.dataset.range || 'day';
+      setHistoryRange(range);
+    });
+  });
+  document.addEventListener('click', ()=>{
+    if(historyRangeMenuOpen){
+      toggleHistoryRangeMenu(false);
+    }
+  });
+  document.addEventListener('keydown', e =>{
+    if(e.key === 'Escape' && historyRangeMenuOpen){
+      toggleHistoryRangeMenu(false);
+      if(typeof historyRangeBtn.focus === 'function'){
+        historyRangeBtn.focus({preventScroll:true});
+      }
+    }
+  });
+  setHistoryRange(historyRange, {silent:true});
+}
 
 historyList?.addEventListener('click', (e)=>{
   const btn = e.target.closest('.item-delete');
