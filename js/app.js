@@ -291,11 +291,12 @@ const state = {
 };
 
 function updateState(updater) {
-  const newState = updater(cloneDataSnapshot());
-  state.feeds = newState.feeds || [];
-  state.elims = newState.elims || [];
-  state.meds = newState.meds || [];
-  state.measurements = newState.measurements || [];
+  // The updater function receives the current state and returns the new state.
+  const newState = updater(state);
+  state.feeds = newState.feeds ?? [];
+  state.elims = newState.elims ?? [];
+  state.meds = newState.meds ?? [];
+  state.measurements = newState.measurements ?? [];
   
   // La persistencia es manejada por el módulo de persistencia.
   // No se usa store.set() aquí. Las llamadas a persistenceApi se hacen
@@ -342,24 +343,21 @@ function updateOfflineIndicator(){
 }
 
 function replaceDataFromSnapshot(snapshot, {skipRender = false} = {}){
-  const data = {
-    feeds: [],
-    elims: [],
-    meds: [],
-    measurements: []
-  };
-  if (snapshot && typeof snapshot === 'object') {
-    data.feeds = Array.isArray(snapshot.feeds) ? snapshot.feeds.map(f => ({...f})) : [];
-    data.elims = Array.isArray(snapshot.elims) ? snapshot.elims.map(e => ({...e})) : [];
-    data.meds = Array.isArray(snapshot.meds) ? snapshot.meds.map(m => ({...m})) : [];
-    data.measurements = Array.isArray(snapshot.measurements) ? snapshot.measurements.map(m => ({...m})) : [];
-  }
-  
-  // Actualiza el estado local sin volver a persistir en localStorage
-  state.feeds = data.feeds;
-  state.elims = data.elims;
-  state.meds = data.meds;
-  state.measurements = data.measurements;
+  updateState(() => {
+    const data = {
+      feeds: [],
+      elims: [],
+      meds: [],
+      measurements: []
+    };
+    if (snapshot && typeof snapshot === 'object') {
+      data.feeds = Array.isArray(snapshot.feeds) ? snapshot.feeds.map(f => ({...f})) : [];
+      data.elims = Array.isArray(snapshot.elims) ? snapshot.elims.map(e => ({...e})) : [];
+      data.meds = Array.isArray(snapshot.meds) ? snapshot.meds.map(m => ({...m})) : [];
+      data.measurements = Array.isArray(snapshot.measurements) ? snapshot.measurements.map(m => ({...m})) : [];
+    }
+    return data;
+  });
 
   if(!skipRender){
     renderHistory();
@@ -2222,26 +2220,25 @@ function ensureAuthSession(auth, { onAuthStateChanged, signInAnonymously }) {
 
 async function bootstrap() {
   try {
-    // Iniciar la carga de los módulos y la autenticación en paralelo para acelerar el arranque.
-    const [core, persistenceModule, user] = await Promise.all([
-      loadFirebaseCore(),
+    // 1. Cargar el núcleo de Firebase una sola vez.
+    const core = await loadFirebaseCore();
+
+    // 2. Iniciar la carga del módulo de persistencia y la autenticación en paralelo.
+    const [persistenceModule, user] = await Promise.all([
       import('./persistence.js'),
-      // La autenticación se inicia aquí, en paralelo con la carga de módulos.
-      loadFirebaseCore().then(({ auth, onAuthStateChanged, signInAnonymously }) =>
-        ensureAuthSession(auth, { onAuthStateChanged, signInAnonymously })
-      ),
+      ensureAuthSession(core.auth, { onAuthStateChanged: core.onAuthStateChanged, signInAnonymously: core.signInAnonymously })
     ]);
 
-    // Asignar las dependencias una vez que todo esté listo.
+    // 3. Asignar las dependencias una vez que todo esté listo.
     const { db, storage, storageFns } = core;
     const { Persistence } = persistenceModule;
 
     persistenceApi = Persistence;
     firebaseDbInstance = db;
     firebaseStorageInstance = storage;
-    firebaseStorageFns = storageFns;
     firebaseAuthUser = user;
     firebaseDocId = user.uid;
+    firebaseStorageFns = storageFns;
 
     // El resto de la inicialización de la app
     setSaveIndicator('idle', isOnline() ? SAVE_MESSAGES.idle : SAVE_MESSAGES.offline);
