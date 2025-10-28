@@ -4,8 +4,8 @@ import {
   setDoc,
   runTransaction,
   onSnapshot,
-  serverTimestamp
-} from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+  serverTimestamp,
+} from "https://www.gstatic.com/firebasejs/12.4.0/firebase-firestore.js";
 
 const COLLECTION = "babyLogs";
 const TYPE_KEYS = {

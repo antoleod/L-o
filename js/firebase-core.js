@@ -1,7 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
-import { getFirestore, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
-import { getAuth, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
-import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-storage.js";
+import { getFirestore, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-firestore.js";
+import { getAuth, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-auth.js";
+import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-storage.js";
 // import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app-check.js";
 
 export const firebaseConfig = Object.freeze({
@@ -22,34 +22,36 @@ export function loadFirebaseCore() {
   }
 
   firebaseCorePromise = (async () => {
-    const app = initializeApp(firebaseConfig);
-    // App Check (reCAPTCHA) está desactivado para el desarrollo.
-    const appCheck = null;
-
-    const db = getFirestore(app);
     try {
+      const app = initializeApp(firebaseConfig);
+      // App Check (reCAPTCHA) está desactivado para el desarrollo.
+      const appCheck = null;
+  
+      const db = getFirestore(app);
       await enableIndexedDbPersistence(db);
       console.log("Firebase offline persistence enabled.");
+      const auth = getAuth(app);
+      const storage = getStorage(app);
+  
+      return Object.freeze({
+        app,
+        db,
+        auth,
+        storage,
+        appCheck,
+        onAuthStateChanged,
+        signInAnonymously,
+        storageFns: {
+          createRef: (instance, path) => ref(instance, path),
+          uploadBytes,
+          getDownloadURL
+        }
+      });
     } catch (error) {
-      console.error("Error enabling offline persistence:", error);
+      console.error("Firebase Core Initialization failed:", error);
+      // Re-throw the error to fail fast and prevent the app from running in a broken state.
+      throw error;
     }
-    const auth = getAuth(app);
-    const storage = getStorage(app);
-
-    return {
-      app,
-      db,
-      auth,
-      storage,
-      appCheck,
-      onAuthStateChanged,
-      signInAnonymously,
-      storageFns: {
-        createRef: (instance, path) => ref(instance, path),
-        uploadBytes,
-        getDownloadURL
-      }
-    };
   })();
 
   return firebaseCorePromise;
