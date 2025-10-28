@@ -1,8 +1,13 @@
-import { doc, setDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-firestore.js";
-import { loadFirebaseCore } from "./firebase-core.js";
+import {
+  doc,
+  setDoc,
+  onSnapshot,
+  serverTimestamp,
+} from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+import { db as sharedDb } from "./firebase.js";
 
 export const FirebaseReports = (() => {
-  let db = null;
+  let db = sharedDb;
   let docId = null;
   let collectionId = 'reports';
   let unsubscribe = null;
@@ -66,12 +71,10 @@ export const FirebaseReports = (() => {
 
   function init(firestoreInstanceOrDocId, maybeDocumentId) {
     if (typeof firestoreInstanceOrDocId === 'string' && !maybeDocumentId) {
-      const documentId = firestoreInstanceOrDocId;
-      return loadFirebaseCore().then(core => {
-        db = core.db;
-        docId = documentId;
-        attachSnapshot();
-      });
+      docId = firestoreInstanceOrDocId;
+      db = sharedDb;
+      attachSnapshot();
+      return Promise.resolve();
     }
 
     if (!firestoreInstanceOrDocId || !maybeDocumentId) {

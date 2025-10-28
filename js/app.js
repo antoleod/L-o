@@ -1193,7 +1193,7 @@ function confirmAndDelete(itemsToDelete) {
     let changed = false;
     const idsByType = itemsToDelete.reduce((acc, item) => {
       if (!acc[item.type]) acc[item.type] = new Set();
-      acc[item.type].add(item.id);
+      acc[item.type].add(String(item.id));
       return acc;
     }, {});
 
@@ -1202,7 +1202,7 @@ function confirmAndDelete(itemsToDelete) {
         const ids = idsByType[type];
         if (currentData[type + 's']) {
           const initialCount = currentData[type + 's'].length;
-          currentData[type + 's'] = currentData[type + 's'].filter(item => !ids.has(item.id));
+          currentData[type + 's'] = currentData[type + 's'].filter(item => !ids.has(String(item.id)));
           if (currentData[type + 's'].length < initialCount) changed = true;
         }
       }
@@ -1810,7 +1810,7 @@ function handleBackgroundChange(event) {
   const file = input.files && input.files[0];
   if (!file) return;
 
-  if (firebaseInitialized && firebaseAuthUser && firebaseStorageInstance && firebaseStorageFns) {
+  if (firebaseInitialized && firebaseStorageInstance && firebaseStorageFns) {
     const { createRef, uploadBytes, getDownloadURL } = firebaseStorageFns;
     const avatarRef = createRef(firebaseStorageInstance, "backgrounds/leo-main-avatar.jpg");
 
@@ -2022,15 +2022,33 @@ function closeManualModal(){
 
 }
 
-import { loadFirebaseCore } from './firebase-core.js';
+const DEFAULT_FIRESTORE_DOC_ID = 'family-shared';
+const DOC_STORAGE_KEY = 'lo.sharedDocId';
+
+function resolveSharedDocumentId() {
+  try {
+    const url = new URL(window.location.href);
+    const queryDoc = url.searchParams.get('doc') || url.searchParams.get('docId');
+    if (queryDoc) {
+      localStorage.setItem(DOC_STORAGE_KEY, queryDoc);
+      return queryDoc;
+    }
+    const stored = localStorage.getItem(DOC_STORAGE_KEY);
+    if (stored) {
+      return stored;
+    }
+  } catch (error) {
+    console.warn('Could not resolve shared Firestore document id:', error);
+  }
+  return DEFAULT_FIRESTORE_DOC_ID;
+}
 
 let firebaseInitialized = false;
-let firebaseAuthUser = null;
-let firebaseDocId = null;
-let firebaseDbInstance = null;
-let firebaseStorageInstance = null;
-let firebaseStorageFns = null;
-let firebaseReportsApi = null;
+let firebaseDocId;
+let firebaseDbInstance;
+let firebaseStorageInstance;
+let firebaseStorageFns;
+// let firebaseReportsApi = null; // This seems unused with persistenceApi
 let persistenceApi = null;
 
 
@@ -2160,6 +2178,8 @@ function saveManualEntry(){
 
 
 async function initFirebaseSync() {
+  const { db: firebaseDb } = await import('./firebase.js');
+  firebaseDbInstance = firebaseDb;
   if (!firebaseDbInstance || !firebaseDocId) {
     console.warn("Firebase dependencies not ready.");
     setSaveIndicator('error', 'Dependencias no listas.');
@@ -2193,60 +2213,22 @@ async function initFirebaseSync() {
   }
 }
 
-function ensureAuthSession(auth, { onAuthStateChanged, signInAnonymously }) {
-    return new Promise((resolve, reject) => {
-        if (auth.currentUser) {
-            return resolve(auth.currentUser);
-        }
-
-        let signInTriggered = false;
-        const unsubscribe = onAuthStateChanged(auth, user => {
-            if (user) {
-                unsubscribe();
-                resolve(user);
-            } else if (!signInTriggered) {
-                signInTriggered = true;
-                signInAnonymously(auth).catch(err => {
-                    unsubscribe();
-                    reject(err);
-                });
-            }
-        }, error => {
-            unsubscribe();
-            reject(error);
-        });
-    });
-}
-
 async function bootstrap() {
   try {
-    // 1. Cargar el núcleo de Firebase una sola vez.
-    const core = await loadFirebaseCore();
-
-    // 2. Iniciar la carga del módulo de persistencia y la autenticación en paralelo.
-    const [persistenceModule, user] = await Promise.all([
-      import('./persistence.js'),
-      ensureAuthSession(core.auth, { onAuthStateChanged: core.onAuthStateChanged, signInAnonymously: core.signInAnonymously })
-    ]);
-
-    // 3. Asignar las dependencias una vez que todo esté listo.
-    const { db, storage, storageFns } = core;
+    const { db, storage, storageFns } = await import('./firebase.js');
+    const persistenceModule = await import('./persistence.js');
     const { Persistence } = persistenceModule;
 
     persistenceApi = Persistence;
     firebaseDbInstance = db;
     firebaseStorageInstance = storage;
-    firebaseAuthUser = user;
-    firebaseDocId = user.uid;
     firebaseStorageFns = storageFns;
+    firebaseDocId = resolveSharedDocumentId();
 
-    // El resto de la inicialización de la app
     setSaveIndicator('idle', isOnline() ? SAVE_MESSAGES.idle : SAVE_MESSAGES.offline);
     updateOfflineIndicator();
 
-    if (firebaseDocId) {
-      await initFirebaseSync();
-    }
+    await initFirebaseSync();
   } catch (error) {
     console.error("Failed to bootstrap Firebase or app modules:", error);
     setSaveIndicator('error', 'Erreur de chargement');
@@ -2295,12 +2277,13 @@ window.addEventListener('offline', () => {
   updateOfflineIndicator();
 });
 
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').catch(err => {
-      console.error('Service worker registration failed:', err);
-    });
-  });
-}
+// Temporarily disable service worker registration to avoid caching stale bundles.
+// if ('serviceWorker' in navigator) {
+//   window.addEventListener('load', () => {
+//     navigator.serviceWorker.register('./sw.js').catch(err => {
+//       console.error('Service worker registration failed:', err);
+//     });
+//   });
+// }
 
 bootstrap();

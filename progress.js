@@ -1,25 +1,54 @@
-import { loadFirebaseCore } from "./js/firebase-core.js";
+import { db } from "./js/firebase.js";
+import {
+  doc,
+  setDoc,
+  onSnapshot,
+} from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
 
-let firebaseApiPromise = null;
-
-async function getFirebaseApi() {
-  if (!firebaseApiPromise) {
-    firebaseApiPromise = loadFirebaseCore();
+function getProgressRef(userId, gameId) {
+  if (!userId || !gameId) {
+    throw new Error("userId and gameId are required");
   }
-  return firebaseApiPromise;
+  return doc(db, "progress", `${userId}_${gameId}`);
 }
 
 export async function saveProgress(userId, gameId, data) {
-  const { db, firestoreFns } = await getFirebaseApi();
-  const { doc, setDoc } = firestoreFns;
-  const ref = doc(db, "progress", `${userId}_${gameId}`);
+  const ref = getProgressRef(userId, gameId);
   await setDoc(ref, { ...data, updatedAt: Date.now() }, { merge: true });
 }
 
+export function listenToProgress(userId, gameId, callback, onError) {
+  const ref = getProgressRef(userId, gameId);
+  return onSnapshot(
+    ref,
+    (snapshot) => {
+      if (typeof callback === "function") {
+        callback(snapshot.exists() ? snapshot.data() : null, snapshot);
+      }
+    },
+    (error) => {
+      if (typeof onError === "function") {
+        onError(error);
+      } else {
+        console.error("Progress listener error:", error);
+      }
+    }
+  );
+}
+
 export async function loadProgress(userId, gameId) {
-  const { db, firestoreFns } = await getFirebaseApi();
-  const { doc, getDoc } = firestoreFns;
-  const ref = doc(db, "progress", `${userId}_${gameId}`);
-  const snap = await getDoc(ref);
-  return snap.exists() ? snap.data() : null;
+  return new Promise((resolve, reject) => {
+    const unsubscribe = listenToProgress(
+      userId,
+      gameId,
+      (data, snapshot) => {
+        unsubscribe();
+        resolve(snapshot && snapshot.exists() ? snapshot.data() : null);
+      },
+      (error) => {
+        unsubscribe();
+        reject(error);
+      }
+    );
+  });
 }

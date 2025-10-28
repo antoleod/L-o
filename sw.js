@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'v3';
+const CACHE_VERSION = 'v4';
 const PRECACHE = `leo-precache-${CACHE_VERSION}`;
 const RUNTIME = `leo-runtime-${CACHE_VERSION}`;
 
@@ -9,7 +9,8 @@ const PRECACHE_URLS = [
   './css/styles.css',
   './js/app.js',
   './js/persistence.js',
-  './js/firebase-core.js'
+  './js/firebase.js',
+  './js/sync_demo.js'
 ];
 
 self.addEventListener('install', event => {
