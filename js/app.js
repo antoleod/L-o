@@ -223,9 +223,8 @@ const statsBreakdownLabel = $('#stats-breakdown-label');
 const saveIndicatorEl = $('#save-indicator');
 const saveLabelEl = $('#save-label');
 const exportReportsBtn = $('#export-pdf');
+const btnElim = $('#btn-elim');
 const footerAddManualBtn = $('#footer-add-manual');
-const footerStatsBtn = $('#footer-stats');
-const footerExportBtn = $('#footer-export');
 const summaryElimEl = $('#summary-elim');
 const dashboardElimEl = $('#dashboard-elim');
 const bgPicker = $('#bg-picker');
@@ -281,16 +280,6 @@ const SAVE_MESSAGES = {
 };
 
 let saveIndicatorResetTimer = null;
-const remoteSyncQueue = [];
-let remoteSyncInFlight = false;
-let firebaseSyncConfigured = false;
-const medsBtn = $('#btn-med');
-const closeMedBtn = $('#close-med');
-const cancelMedBtn = $('#cancel-med');
-const saveMedBtn = $('#save-med');
-const medSelect = $('#medication-select');
-const medOtherField = $('#medication-other-field');
-const medOtherInput = $('#medication-other');
 const summaryMedEl = $('#summary-med');
 
 // ===== State =====
@@ -300,6 +289,18 @@ const state = {
   meds: store.get('meds', []), // {id,dateISO,name}
   measurements: store.get('measurements', []) // {id,dateISO,temp,weight,height}
 };
+
+function updateState(updater) {
+  const newState = updater(cloneDataSnapshot());
+  state.feeds = newState.feeds || [];
+  state.elims = newState.elims || [];
+  state.meds = newState.meds || [];
+  state.measurements = newState.measurements || [];
+  
+  // La persistencia ahora es manejada por el módulo de persistencia,
+  // no directamente aquí con store.set() para el estado principal.
+}
+
 const HISTORY_RANGE_KEY = 'historyRange';
 
 // Variable para el modo de edición, se gestionará a través de las funciones del modal
@@ -328,24 +329,6 @@ function isOnline(){
   return navigator.onLine !== false;
 }
 
-function setSaveIndicator(state = 'idle', message){
-  if(!saveIndicatorEl || !saveLabelEl) return;
-  if(saveIndicatorResetTimer){
-    clearTimeout(saveIndicatorResetTimer);
-    saveIndicatorResetTimer = null;
-  }
-  saveIndicatorEl.dataset.state = state || 'idle';
-  saveLabelEl.textContent = message || SAVE_MESSAGES[state] || SAVE_MESSAGES.idle;
-  if(state === 'synced'){
-    saveIndicatorResetTimer = setTimeout(() => {
-      if(saveIndicatorEl && saveIndicatorEl.dataset.state === 'synced'){
-        saveIndicatorEl.dataset.state = 'idle';
-        saveLabelEl.textContent = SAVE_MESSAGES.idle;
-      }
-    }, 4000);
-  }
-}
-
 function updateOfflineIndicator(){
   if(!saveIndicatorEl) return;
   const offline = !isOnline();
@@ -355,112 +338,6 @@ function updateOfflineIndicator(){
   }else if(!offline && saveIndicatorEl.dataset.state === 'idle' && saveLabelEl && saveLabelEl.textContent === SAVE_MESSAGES.offline){
     setSaveIndicator('idle', SAVE_MESSAGES.idle);
   }
-}
-
-function enqueueRemoteSync(reason = 'Sync update'){
-  if(!firebaseInitialized){
-    setSaveIndicator('idle', SAVE_MESSAGES.offline);
-    return;
-  }
-  const payload = cloneDataSnapshot();
-  remoteSyncQueue.length = 0;
-  remoteSyncQueue.push({payload, reason, attempt:0});
-  processRemoteSync();
-}
-
-function processRemoteSync(){
-  if(remoteSyncInFlight) return;
-  if(!remoteSyncQueue.length) return;
-  if(!firebaseReportsApi || !firebaseSyncConfigured){
-    return;
-  }
-  if(!isOnline()){
-    updateOfflineIndicator();
-    return;
-  }
-  const job = remoteSyncQueue.pop();
-  remoteSyncQueue.length = 0;
-  remoteSyncInFlight = true;
-  setSaveIndicator('saving', SAVE_MESSAGES.saving);
-  firebaseReportsApi.saveAll(job.payload, job.reason, { merge: true })
-    .then(() => {
-      remoteSyncInFlight = false;
-      setSaveIndicator('synced', SAVE_MESSAGES.synced);
-      processRemoteSync();
-    })
-    .catch(err => {
-      remoteSyncInFlight = false;
-      console.error('Firebase save failed:', err);
-      setSaveIndicator('error', SAVE_MESSAGES.error);
-      remoteSyncQueue.push({
-        payload: job.payload,
-        reason: job.reason,
-        attempt: (job.attempt || 0) + 1
-      });
-      const retryDelay = Math.min(15000, 3000 * ((job.attempt || 0) + 1));
-      setTimeout(processRemoteSync, retryDelay);
-    });
-}
-
-function exportReports(){
-  if (exportReportsBtn.classList.contains('is-loading')) return;
-
-  exportReportsBtn.classList.add('is-loading');
-  exportReportsBtn.disabled = true;
-
-  try {
-      const snapshot = cloneDataSnapshot();
-      snapshot.exportedAt = new Date().toISOString();
-      const json = JSON.stringify(snapshot, null, 2);
-      const blob = new Blob([json], {type:'application/json'});
-      const url = URL.createObjectURL(blob);
-      const now = new Date();
-      const pad = (val) => String(val).padStart(2, '0');
-      const filename = `leo-reports-${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}.json`;
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      requestAnimationFrame(() => {
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-      });
-      setSaveIndicator('synced', 'Export téléchargé');
-  } catch(err) {
-      console.error('Export failed:', err);
-      setSaveIndicator('error', 'Export indisponible');
-  } finally {
-      setTimeout(() => {
-        exportReportsBtn.classList.remove('is-loading');
-        exportReportsBtn.disabled = false;
-      }, 1000);
-  }
-}
-
-function persistAll(reason = 'Sync update'){
-  store.set('feeds', feeds);
-  store.set('elims', elims);
-  store.set('meds', meds);
-  if(isOnline()){
-    setSaveIndicator('saving', SAVE_MESSAGES.saving);
-  }else{
-    setSaveIndicator('idle', SAVE_MESSAGES.offline);
-  }
-  enqueueRemoteSync(reason);
-}
-
-function updateState(updater) {
-  const newState = updater(cloneDataSnapshot());
-  state.feeds = newState.feeds || [];
-  state.elims = newState.elims || [];
-  state.meds = newState.meds || [];
-  state.measurements = newState.measurements || [];
-  
-  store.set('feeds', state.feeds);
-  store.set('elims', state.elims);
-  store.set('meds', state.meds);
-  store.set('measurements', state.measurements);
 }
 
 function replaceDataFromSnapshot(snapshot, {persistLocal = true, skipRender = false} = {}){
@@ -476,7 +353,12 @@ function replaceDataFromSnapshot(snapshot, {persistLocal = true, skipRender = fa
     data.meds = Array.isArray(snapshot.meds) ? snapshot.meds.map(m => ({...m})) : [];
     data.measurements = Array.isArray(snapshot.measurements) ? snapshot.measurements.map(m => ({...m})) : [];
   }
-  updateState(() => data);
+  
+  // Actualiza el estado local sin volver a persistir en localStorage
+  state.feeds = data.feeds;
+  state.elims = data.elims;
+  state.meds = data.meds;
+  state.measurements = data.measurements;
 
   if(!skipRender){
     renderHistory();
@@ -1322,7 +1204,7 @@ function confirmAndDelete(itemsToDelete) {
     });
 
     if (changed) {
-      enqueueRemoteSync(`Delete ${itemsToDelete.length} entries`);
+      persistenceApi.deleteEntries(type, Array.from(ids), `Delete ${itemsToDelete.length} entries`);
       renderHistory();
     }
     toggleDeleteMode(false);
@@ -1335,6 +1217,53 @@ function confirmAndDelete(itemsToDelete) {
 
   openModal('#modal-confirm-delete');
   pinInput.focus();
+}
+
+function setSaveIndicator(status = 'idle', message){
+  if(!saveIndicatorEl || !saveLabelEl) return;
+  if(saveIndicatorResetTimer){
+    clearTimeout(saveIndicatorResetTimer);
+    saveIndicatorResetTimer = null;
+  }
+  saveIndicatorEl.dataset.state = status || 'idle';
+  saveLabelEl.textContent = message || SAVE_MESSAGES[status] || SAVE_MESSAGES.idle;
+  if(status === 'synced'){
+    saveIndicatorResetTimer = setTimeout(() => {
+      if(saveIndicatorEl && saveIndicatorEl.dataset.state === 'synced'){
+        setSaveIndicator('idle');
+      }
+    }, 4000);
+  }
+}
+
+function exportReports(){
+  if (exportReportsBtn.classList.contains('is-loading')) return;
+  exportReportsBtn.classList.add('is-loading');
+  exportReportsBtn.disabled = true;
+  try {
+    const snapshot = cloneDataSnapshot();
+    snapshot.exportedAt = new Date().toISOString();
+    const json = JSON.stringify(snapshot, null, 2);
+    const blob = new Blob([json], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const now = new Date();
+    const pad = (val) => String(val).padStart(2, '0');
+    const filename = `leo-reports-${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}.json`;
+    const a = Object.assign(document.createElement('a'), { href: url, download: filename });
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    setSaveIndicator('synced', 'Exportation réussie');
+  } catch(err) {
+    console.error('Export failed:', err);
+    setSaveIndicator('error', "L'exportation a échoué");
+  } finally {
+    setTimeout(() => {
+      exportReportsBtn.classList.remove('is-loading');
+      exportReportsBtn.disabled = false;
+    }, 1000);
+  }
 }
 
 function updateMedSummary(){
@@ -1615,7 +1544,7 @@ function saveFeed(entry){
     return currentData;
   });
   closeModal('#modal-leche');
-  enqueueRemoteSync('Save feed entry');
+  persistenceApi.saveEntry('feed', entry, 'Save feed entry');
   renderHistory();
 }
 
@@ -1671,7 +1600,7 @@ if(savedTimer && savedTimer.start){
 }
 
 // ===== Eliminations modal logic =====
-$('#btn-elim')?.addEventListener('click', ()=>{ renderElimHistory(); openModal('#modal-elim'); });
+btnElim?.addEventListener('click', ()=>{ renderElimHistory(); openModal('#modal-elim'); });
 $('#close-elim')?.addEventListener('click', ()=> closeModal('#modal-elim'));
 $('#cancel-elim')?.addEventListener('click', ()=> closeModal('#modal-elim'));
 
@@ -1701,7 +1630,7 @@ $('#save-elim')?.addEventListener('click', ()=>{
     });
     return currentData;
   });
-  enqueueRemoteSync('Add elimination entry');
+  persistenceApi.saveEntry('elim', { id: Date.now()+'', dateISO: new Date().toISOString(), ...scales }, 'Add elimination entry');
   closeModal('#modal-elim');
   renderHistory();
 });
@@ -1757,7 +1686,7 @@ function saveMedication(){
     return currentData;
   });
   updateMedSummary();
-  enqueueRemoteSync('Add medication entry');
+  persistenceApi.saveEntry('med', { id: Date.now()+'', dateISO: new Date().toISOString(), name, medKey: selection }, 'Add medication entry');
   renderHistory();
   closeMedModal();
 }
@@ -1804,7 +1733,7 @@ function saveMesures() {
     currentData.measurements.push(entry);
     return currentData;
   });
-  enqueueRemoteSync('Add measurement entry');
+  persistenceApi.saveEntry('measurement', entry, 'Add measurement entry');
   closeModal('#modal-mesures');
   renderHistory();
 }
@@ -2122,7 +2051,7 @@ let firebaseDbInstance = null;
 let firebaseStorageInstance = null;
 let firebaseStorageFns = null;
 let firebaseReportsApi = null;
-let firebaseReportsUnsubscribe = null;
+let persistenceApi = null;
 
 
 function beginEditEntry(type, id){
@@ -2143,14 +2072,13 @@ function saveManualEntry(){
   const targetType = isEdit && editingEntry ? editingEntry.type : manualType;
   let date = manualDatetime && manualDatetime.value ? new Date(manualDatetime.value) : new Date();
   if(Number.isNaN(date.getTime())) date = new Date();
-  const dateISO = date.toISOString();
   let reason = null;
   let entry = null;
 
   updateState(currentData => {
     if (targetType === 'feed') {
       const sourceValue = (manualSource?.value || 'breast') === 'bottle' ? 'bottle' : 'breast';
-      entry = { id: isEdit ? editingEntry.id : Date.now()+'', dateISO, source: sourceValue };
+      entry = { id: isEdit ? editingEntry.id : Date.now()+'', dateISO: date.toISOString(), source: sourceValue };
       if (sourceValue === 'breast') {
         const mins = Math.max(0, Number(manualDuration?.value || 0));
         entry.durationSec = Math.round(mins * 60);
@@ -2172,7 +2100,7 @@ function saveManualEntry(){
     } else if (targetType === 'elim') {
       entry = {
         id: isEdit ? editingEntry.id : Date.now()+'',
-        dateISO,
+        dateISO: date.toISOString(),
         pee: clamp(Number(manualPee?.value || 0), 0, 3),
         poop: clamp(Number(manualPoop?.value || 0), 0, 3),
         vomit: clamp(Number(manualVomit?.value || 0), 0, 3)
@@ -2203,7 +2131,7 @@ function saveManualEntry(){
     }
     const dose = (manualMedDose?.value || '').trim();
     const notes = (manualMedNotes?.value || '').trim();
-    entry = { id: isEdit ? editingEntry.id : Date.now()+'', dateISO, name, medKey: selection };
+    entry = { id: isEdit ? editingEntry.id : Date.now()+'', dateISO: date.toISOString(), name, medKey: selection };
     if (dose) entry.dose = dose;
     if (notes) entry.notes = notes;
 
@@ -2225,7 +2153,7 @@ function saveManualEntry(){
         throw new Error("At least one measurement is required");
       }
 
-      entry = { id: isEdit ? editingEntry.id : Date.now() + '', dateISO };
+      entry = { id: isEdit ? editingEntry.id : Date.now() + '', dateISO: date.toISOString() };
       if (temp !== null) entry.temp = temp;
       if (weight !== null) entry.weight = weight;
       if (height !== null) entry.height = height;
@@ -2242,61 +2170,43 @@ function saveManualEntry(){
     return currentData;
   });
 
-  if(reason){
-    enqueueRemoteSync(reason);
+  if(reason && entry){
+    persistenceApi.saveEntry(targetType, entry, reason);
   }
   closeManualModal();
   renderHistory();
 }
 
 
-function initFirebaseSync(options = {}) {
-  const nextDb = options.db || firebaseDbInstance;
-  const nextStorage = options.storage || firebaseStorageInstance;
-  const nextDocId = options.docId || firebaseDocId;
-  const nextStorageFns = options.storageFns || firebaseStorageFns;
-
-  if (!firebaseReportsApi) {
-    console.warn("FirebaseReports API not available yet.");
+function initFirebaseSync() {
+  if (!persistenceApi) {
+    console.warn("Persistence module not available yet.");
     return;
   }
 
-  if (!nextDb || !nextStorage || !nextDocId) {
+  if (!firebaseDbInstance || !firebaseDocId) {
     console.warn("Firebase dependencies not ready.");
     return;
   }
 
-  firebaseDbInstance = nextDb;
-  firebaseStorageInstance = nextStorage;
-  firebaseDocId = nextDocId;
-  firebaseStorageFns = nextStorageFns;
-
   try {
-    firebaseReportsApi.init(firebaseDbInstance, firebaseDocId);
-
+    persistenceApi.init(firebaseDbInstance, firebaseDocId);
     firebaseInitialized = true;
-    firebaseSyncConfigured = true;
     console.log(`Firebase sync initialized for document ${firebaseDocId}`);
 
-    if (!firebaseReportsUnsubscribe) {
-      firebaseReportsUnsubscribe = firebaseReportsApi.on((event, payload) => {
-        if (event === 'synced') {
-          console.log('Datos sincronizados desde Firebase:', payload);
-          replaceDataFromSnapshot(payload, { persistLocal: true, skipRender: false });
-          if (isOnline()) setSaveIndicator('synced', 'Synchronise depuis le cloud');
-        } else if (event === 'configured') {
-          firebaseSyncConfigured = true;
-          processRemoteSync();
-        } else if (event === 'error') {
-          setSaveIndicator('error', SAVE_MESSAGES.error);
-        }
-      });
-    }
+    persistenceApi.on((event, payload) => {
+      if (event === 'data-changed') {
+        console.log('Data changed from persistence layer:', payload);
+        replaceDataFromSnapshot(payload, { skipRender: false });
+        setSaveIndicator('synced', 'Données à jour');
+      } else if (event === 'sync-status') {
+        setSaveIndicator(payload, SAVE_MESSAGES[payload]);
+      }
+    });
 
-    processRemoteSync();
+    persistenceApi.connect();
   } catch (error) {
     console.error("Firebase init failed:", error);
-    firebaseSyncConfigured = false;
     setSaveIndicator('error', SAVE_MESSAGES.error);
   }
 }
@@ -2330,50 +2240,40 @@ function ensureAuthSession(auth, { onAuthStateChanged, signInAnonymously }) {
 }
 
 async function bootstrap() {
-  // Cargar los módulos de Firebase y la API de reports
-  let firebaseCore;
-  let reportsModule;
   try {
-    [firebaseCore, reportsModule] = await Promise.all([
+    // Cargar los módulos de Firebase y nuestro módulo de persistencia
+    const [firebaseCore, persistenceModule] = await Promise.all([
       loadFirebaseCore(),
-      import('./firebase_reports.js')
+      // import('./firebase_reports.js') // Ya no se usa
+      import('./persistence.js')
     ]);
-  } catch (error) {
-    console.error("Failed to load Firebase scripts:", error);
-    setSaveIndicator('error', 'Erreur de chargement');
-    return;
-  }
 
-  const {
-    db,
-    storage,
-    auth,
-    onAuthStateChanged,
-    signInAnonymously,
-    storageFns
-  } = firebaseCore;
-  const { FirebaseReports } = reportsModule;
+    const {
+      db,
+      storage,
+      auth,
+      onAuthStateChanged,
+      signInAnonymously,
+      storageFns
+    } = firebaseCore;
+    const { Persistence } = persistenceModule;
 
-  firebaseReportsApi = FirebaseReports;
-  firebaseDbInstance = db;
-  firebaseStorageInstance = storage;
-  firebaseStorageFns = storageFns;
+    persistenceApi = Persistence;
+    firebaseDbInstance = db;
+    firebaseStorageInstance = storage;
+    firebaseStorageFns = storageFns;
 
-  try {
     const user = await ensureAuthSession(auth, { onAuthStateChanged, signInAnonymously });
     firebaseAuthUser = user;
     firebaseDocId = user.uid;
-  } catch (authError) {
-    console.error("Firebase auth failed:", authError);
-  }
 
-  if (firebaseDocId) {
-    initFirebaseSync({
-      db: firebaseDbInstance,
-      storage: firebaseStorageInstance,
-      docId: firebaseDocId,
-      storageFns: firebaseStorageFns
-    });
+    if (firebaseDocId) {
+      initFirebaseSync();
+    }
+  } catch (error) {
+    console.error("Failed to bootstrap Firebase or app modules:", error);
+    setSaveIndicator('error', 'Erreur de chargement');
+    return;
   }
 
   // El resto de la inicialización de la app
@@ -2396,7 +2296,6 @@ async function bootstrap() {
 addManualBtn?.addEventListener('click', ()=> openManualModal({mode:'create', type:'feed'}));
 footerAddManualBtn?.addEventListener('click', ()=> openManualModal({mode:'create', type:'feed'}));
 exportReportsBtn?.addEventListener('click', exportReports);
-footerStatsBtn?.addEventListener('click', () => statsBtn?.click());
 closeManualBtn?.addEventListener('click', closeManualModal);
 cancelManualBtn?.addEventListener('click', closeManualModal);
 saveManualBtn?.addEventListener('click', () => {
@@ -2413,12 +2312,6 @@ if(manualModal){
 
 window.addEventListener('online', () => {
   updateOfflineIndicator();
-  // Cuando vuelve a estar en línea, intenta inicializar si no lo estaba
-  if (!firebaseInitialized) {
-    initFirebaseSync();
-  }
-  // Y siempre intenta procesar la cola de sincronización
-  processRemoteSync();
 });
 
 window.addEventListener('offline', () => {
