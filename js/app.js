@@ -1186,7 +1186,7 @@ function confirmAndDelete(itemsToDelete) {
 
   const closeConfirmModal = () => closeModal('#modal-confirm-delete');
 
-  const onConfirm = () => {
+  const onConfirm = async () => {
     if (pinInput.value !== '2410') {
       alert('Code de sécurité incorrect.');
       pinInput.value = '';
@@ -1214,10 +1214,25 @@ function confirmAndDelete(itemsToDelete) {
     });
 
     if (changed) {
+      const api = getPersistenceApi();
+      const promises = [];
       for (const type in idsByType) {
         const idsToDelete = Array.from(idsByType[type]);
-        const api = getPersistenceApi();
-        api?.deleteEntries?.(type, idsToDelete, `Delete ${idsToDelete.length} ${type}(s)`);
+        if (api && typeof api.deleteEntries === 'function') {
+          promises.push(api.deleteEntries(type, idsToDelete, `Delete ${idsToDelete.length} ${type}(s)`));
+        }
+      }
+      try {
+        await Promise.all(promises);
+        // Ensure UI updates reflect deletions
+        renderHistory();
+        setSaveIndicator('synced', 'Suppression effectuée');
+        // After deletion, navigate back to index.html as requested
+        // Short delay to let user see confirmation
+        setTimeout(() => { window.location.href = 'index.html'; }, 600);
+      } catch (err) {
+        console.error('Error deleting entries:', err);
+        setSaveIndicator('error', 'Erreur lors de la suppression');
       }
     }
     toggleDeleteMode(false);
