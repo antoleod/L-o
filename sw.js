@@ -1,11 +1,13 @@
-const PRECACHE = 'leo-precache-v2';
-const RUNTIME = 'leo-runtime-v2';
+const CACHE_VERSION = 'v3';
+const PRECACHE = `leo-precache-${CACHE_VERSION}`;
+const RUNTIME = `leo-runtime-${CACHE_VERSION}`;
 
+// Lista de recursos esenciales para el funcionamiento offline inicial.
 const PRECACHE_URLS = [
   './',
   './index.html',
   './css/styles.css',
-  './js/app.js', // Assuming this is the correct sync script
+  './js/app.js',
   './js/persistence.js',
   './js/firebase-core.js',
   './img/baby.jpg',
@@ -15,64 +17,91 @@ const PRECACHE_URLS = [
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(PRECACHE)
-      .then(cache => cache.addAll(PRECACHE_URLS))
-      .then(() => self.skipWaiting())
+      .then(cache => cache.addAll(PRECACHE_URLS).catch(error => {
+        console.error('Precaching failed:', error);
+      }))
+      .then(self.skipWaiting)
   );
 });
 
 self.addEventListener('activate', event => {
-  // Esto fuerza al SW a tomar control inmediato de la página.
+  const currentCaches = [PRECACHE, RUNTIME];
   event.waitUntil(
-    caches.keys().then(keys => Promise.all(
-      keys
-        .filter(key => key !== PRECACHE && key !== RUNTIME)
-        .map(key => caches.delete(key))
-    )).then(() => self.clients.claim()) // Tomar control de las páginas abiertas.
+    caches.keys().then(cacheNames => {
+      return Promise.all(
+        cacheNames
+          .filter(cacheName => !currentCaches.includes(cacheName))
+          .map(cacheToDelete => caches.delete(cacheToDelete))
+      );
+    }).then(() => self.clients.claim())
   );
 });
 
 self.addEventListener('fetch', event => {
-  // Solo interceptar peticiones HTTP/HTTPS. Ignorar otras (ej. chrome-extension://)
-  if (!event.request.url.startsWith('http')) {
+  const { request } = event;
+
+  // Ignorar peticiones que no son GET o no son HTTP/HTTPS.
+  if (request.method !== 'GET' || !request.url.startsWith('http')) {
     return;
   }
 
-  // Estrategia Network-first para peticiones de navegación (HTML)
-  if (event.request.mode === 'navigate') {
+  // Estrategia Network-First para peticiones de navegación (HTML).
+  // Asegura que el usuario siempre obtenga la última versión de la página si hay conexión.
+  if (request.mode === 'navigate') {
     event.respondWith((async () => {
       try {
-        // Primero, intenta obtener la página de la red.
-        const networkResponse = await fetch(event.request);
-        // Si tiene éxito, guárdala en caché y devuélvela.
-        const cache = await caches.open(RUNTIME);
-        cache.put(event.request, networkResponse.clone());
+        const networkResponse = await fetch(request);
         return networkResponse;
       } catch (error) {
-        // Si la red falla, sirve la página principal desde la caché de preinstalación.
-        console.log('Network request failed, serving page from cache.');
-        return await caches.match('./index.html');
+        // Si la red falla, sirve la página principal desde la caché.
+        console.log('Network request for navigation failed, serving from cache.', error);
+        const cache = await caches.open(PRECACHE);
+        return await cache.match('./index.html');
       }
     })());
     return;
   }
 
-  // Estrategia Network-first para los assets (JS, CSS, etc.)
-  // Intenta obtener de la red primero para tener siempre el código más reciente.
-  // Si la red falla, recurre a la caché para que la app funcione offline.
-  event.respondWith(
-    caches.open(RUNTIME).then(cache => {
-      return fetch(event.request)
-        .then(networkResponse => {
-          // Si la petición a la red es exitosa, la guardamos en caché y la devolvemos.
-          if (networkResponse && networkResponse.status === 200 && event.request.method === 'GET') {
-            cache.put(event.request, networkResponse.clone());
-          }
-          return networkResponse;
-        })
-        .catch(() => {
-          // Si la red falla, intentamos servir desde la caché.
-          return cache.match(event.request);
-        });
-    })
-  );
+  // Estrategia Stale-While-Revalidate para assets principales (CSS, JS).
+  // Sirve desde la caché para velocidad, y actualiza en segundo plano.
+  if (PRECACHE_URLS.some(url => request.url.endsWith(url.substring(1)))) {
+    event.respondWith((async () => {
+      const cache = await caches.open(PRECACHE);
+      const cachedResponse = await cache.match(request);
+
+      const fetchedResponsePromise = fetch(request).then(networkResponse => {
+        if (networkResponse.ok) {
+          cache.put(request, networkResponse.clone());
+        }
+        return networkResponse;
+      }).catch(err => {
+        console.warn(`Fetch failed for ${request.url}, using cache.`, err);
+        // Si la red falla y no hay nada en caché, este error se propagará.
+        // Si hay algo en caché, ya lo habremos devuelto.
+      });
+
+      return cachedResponse || fetchedResponsePromise;
+    })());
+    return;
+  }
+
+  // Estrategia Cache-First para otros recursos (imágenes de runtime, fuentes, etc.).
+  // Si está en caché, se sirve desde ahí. Si no, se pide a la red y se guarda.
+  event.respondWith((async () => {
+    const cache = await caches.open(RUNTIME);
+    const cachedResponse = await cache.match(request);
+    if (cachedResponse) {
+      return cachedResponse;
+    }
+    try {
+      const networkResponse = await fetch(request);
+      if (networkResponse.ok) {
+        cache.put(request, networkResponse.clone());
+      }
+      return networkResponse;
+    } catch (error) {
+      console.error(`Fetch and cache failed for ${request.url}`, error);
+      // Opcional: devolver una imagen o respuesta genérica de fallback.
+    }
+  })());
 });

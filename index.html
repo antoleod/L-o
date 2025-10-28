@@ -377,6 +377,25 @@
     </div>
   </div>
 
+  <!-- Template para los elementos del historial -->
+  <template id="history-item-template">
+    <div class="item enter history-item">
+      <div class="item-content">
+        <input type="checkbox" class="history-item-checkbox" aria-label="Sélectionner cet élément">
+        <strong class="item-title"></strong>
+        <div class="item-meta"></div>
+      </div>
+      <div class="item-actions">
+        <button class="item-action item-edit" aria-label="Modifier l'entrée">
+          <span>&#9998;</span>
+        </button>
+        <button class="item-delete" aria-label="Supprimer l'entrée">
+          <span>×</span>
+        </button>
+      </div>
+    </div>
+  </template>
+
   <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
   <script type="module" src="js/app.js"></script>
 </body>

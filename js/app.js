@@ -971,6 +971,7 @@ function updateStatsChart(force = false){
 }
 function renderHistory(){
   if(!historyList) return;
+  const itemTemplate = $('#history-item-template');
   const all = getHistoryEntriesForRange();
 
   historyList.innerHTML = '';
@@ -980,6 +981,8 @@ function renderHistory(){
     empty.textContent = "Aucun enregistrement pour le moment. Ajoutez un premier suivi !";
     historyList.appendChild(empty);
   }else{
+    const fragment = document.createDocumentFragment();
+    const newItems = [];
     const groupedByDay = all.reduce((acc, entry) => {
       const date = new Date(entry.item.dateISO);
       const dayKey = toDateInputValue(date); // YYYY-MM-DD
@@ -996,18 +999,19 @@ function renderHistory(){
       const date = parseDateInput(dayKey);
       const isToday = toDateInputValue(new Date()) === dayKey;
       dayHeader.textContent = isToday ? "Aujourd'hui" : date.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
-      historyList.appendChild(dayHeader);
+      fragment.appendChild(dayHeader);
 
       const entriesForDay = groupedByDay[dayKey];
       for (const row of entriesForDay) {
-        const div = document.createElement('div');
-        div.className = 'item enter history-item';
+        const clone = itemTemplate.content.cloneNode(true);
+        const div = clone.querySelector('.history-item');
         const dateString = new Date(row.item.dateISO).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
         let title = '';
+
         if(row.type === 'feed'){
           if(row.item.source === 'breast'){
             const mins = Math.round((row.item.durationSec || 0) / 60);
-            title = `🍼 Sein (${escapeHtml(row.item.breastSide || '')}) · ${mins} min`;
+            title = `🍼 Sein (${row.item.breastSide || ''}) · ${mins} min`;
           }else{
             const ml = Number(row.item.amountMl || 0);
             title = `🍼 Biberon · ${ml} ml`;
@@ -1015,8 +1019,8 @@ function renderHistory(){
         }else if(row.type === 'elim'){
           title = `🚼 Eliminations · P:${row.item.pee} · C:${row.item.poop} · V:${row.item.vomit}`;
         }else if(row.type === 'med'){
-          const doseSuffix = row.item.dose ? ` · ${escapeHtml(row.item.dose)}` : '';
-          title = `💊 ${escapeHtml(row.item.name)}${doseSuffix}`;
+          const doseSuffix = row.item.dose ? ` · ${row.item.dose}` : '';
+          title = `💊 ${row.item.name}${doseSuffix}`;
         }else if(row.type === 'measurement'){
           const parts = ['📏 Mesures'];
           if(row.item.temp) parts.push(`Temp ${row.item.temp}°C`);
@@ -1024,33 +1028,36 @@ function renderHistory(){
           if(row.item.height) parts.push(`Taille ${row.item.height}cm`);
           title = parts.join(' · ');
         }
-        const metaParts = [`<span class="item-meta-time">${escapeHtml(dateString)}</span>`];
+
+        const metaHtml = [`<span class="item-meta-time">${escapeHtml(dateString)}</span>`];
         if(row.type === 'med' && row.item.medKey){
           const medLabel = row.item.medKey === 'other' ? 'AUTRE' : String(row.item.medKey).toUpperCase();
-          metaParts.push(`<span class="item-meta-tag">${escapeHtml(medLabel)}</span>`);
+          metaHtml.push(`<span class="item-meta-tag">${escapeHtml(medLabel)}</span>`);
         }
         if(row.item.notes){
-          metaParts.push(`<span class="item-note">${escapeHtml(row.item.notes)}</span>`);
+          metaHtml.push(`<span class="item-note">${escapeHtml(row.item.notes)}</span>`);
         }
-        div.innerHTML = `
-          <div class="item-content">
-            <input type="checkbox" class="history-item-checkbox" aria-label="Sélectionner cet élément" data-id="${row.item.id}" data-type="${row.type}">
-            <strong>${title}</strong>
-            <div class="item-meta">${metaParts.join('')}</div>
-          </div>
-          <div class="item-actions">
-            <button class="item-action item-edit" data-type="${row.type}" data-id="${row.item.id}" aria-label="Modifier l'entrée">
-              <span>&#9998;</span>
-            </button>
-            <button class="item-delete" data-type="${row.type}" data-id="${row.item.id}" aria-label="Supprimer l'entrée">
-              <span>×</span>
-            </button>
-          </div>
-        `;
-        historyList.appendChild(div);
-        requestAnimationFrame(()=> div.classList.remove('enter'));
+
+        div.querySelector('.item-title').textContent = title;
+        div.querySelector('.item-meta').innerHTML = metaHtml.join('');
+
+        const checkbox = div.querySelector('.history-item-checkbox');
+        checkbox.dataset.id = row.item.id;
+        checkbox.dataset.type = row.type;
+
+        div.querySelector('.item-edit').dataset.id = row.item.id;
+        div.querySelector('.item-edit').dataset.type = row.type;
+        div.querySelector('.item-delete').dataset.id = row.item.id;
+        div.querySelector('.item-delete').dataset.type = row.type;
+
+        fragment.appendChild(div);
+        newItems.push(div);
       }
     }
+    historyList.appendChild(fragment);
+    requestAnimationFrame(() => {
+      newItems.forEach(item => item.classList.remove('enter'));
+    });
   }
   if(countPillEl){
     countPillEl.textContent = String(all.length);
@@ -1221,6 +1228,15 @@ function confirmAndDelete(itemsToDelete) {
 
   openModal('#modal-confirm-delete');
   pinInput.focus();
+}
+
+function getPersistenceApi() {
+  if (!persistenceApi) {
+    console.warn("Persistence API not initialized yet. Action delayed or ignored.");
+    setSaveIndicator('error', 'API no lista. Intente de nuevo.');
+    return null;
+  }
+  return persistenceApi;
 }
 
 function setSaveIndicator(status = 'idle', message){
