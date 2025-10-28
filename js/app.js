@@ -483,9 +483,6 @@ function replaceDataFromSnapshot(snapshot, {persistLocal = true, skipRender = fa
   }
 }
 
-let historyMenuOutsideHandler = null;
-let historyMenuKeydownHandler = null;
-
 function parseDateInput(value){
   if(value instanceof Date){
     return new Date(value.getFullYear(), value.getMonth(), value.getDate());
@@ -1183,35 +1180,13 @@ syncHistoryRangeUI();
 renderHistory();
 
 historyRangeBtn?.addEventListener('click', (event) => {
-  event.preventDefault();
-  toggleHistoryRangeMenu();
+  openModal('#modal-range-select');
 });
 
-historyRangeMenu?.addEventListener('click', (event) => {
+$('#close-range-select')?.addEventListener('click', () => closeModal('#modal-range-select'));
+
+$('#range-options-container')?.addEventListener('click', (event) => {
   handleHistoryRangeMenuSelection(event.target);
-});
-
-historyRangeMenu?.addEventListener('keydown', (event) => {
-  if(event.key === 'Enter' || event.key === ' '){
-    event.preventDefault();
-    handleHistoryRangeMenuSelection(event.target);
-  }
-});
-
-historyRangeMenu?.addEventListener('focusout', (event) => {
-  const nextTarget = event.relatedTarget;
-  if(nextTarget && historyRangeMenu?.contains(nextTarget)){
-    return;
-  }
-  closeHistoryRangeMenu();
-});
-
-historyRangeDateInput?.addEventListener('change', (event) => {
-  const value = event.target.value;
-  if(!value) return;
-  setHistoryRange('custom', {date: value});
-  closeHistoryRangeMenu();
-  historyRangeBtn?.focus();
 });
 
 statsBtn?.addEventListener('click', () => {
@@ -2197,20 +2172,26 @@ function saveManualEntry(){
 }
 
 
-function initFirebaseSync() {
-  if (window.firebase && window.FirebaseReports) {
-    try {
-      const firebaseApp = window.firebase.app();
-      window.FirebaseReports.init(firebaseApp, 'leo-reports'); // Usamos 'leo-reports' como ID del documento
-      firebaseInitialized = true;
-      firebaseSyncConfigured = true;
-      processRemoteSync();
-    } catch (err) {
-      console.error('Firebase init error:', err);
-      firebaseSyncConfigured = false;
-      setSaveIndicator('error', SAVE_MESSAGES.error);
-    }
+let initFirebaseAttempts = 0;
+const MAX_INIT_ATTEMPTS = 5;
 
+function initFirebaseSync(isRetry = false) {
+  if (firebaseInitialized) return;
+  if (!window.firebase || !window.FirebaseReports) {
+    if (!isRetry) console.warn("Firebase SDK not ready. Will retry.");
+    return;
+  }
+
+  initFirebaseAttempts++;
+  try {
+    const firebaseApp = window.firebase.app();
+    window.FirebaseReports.init(firebaseApp, 'leo-reports');
+    firebaseInitialized = true;
+    firebaseSyncConfigured = true;
+    console.log("Firebase sync initialized successfully.");
+    processRemoteSync(); // Intenta sincronizar inmediatamente
+
+    // Configurar listeners una sola vez
     window.FirebaseReports.on((event, payload) => {
       if (event === 'synced') {
         console.log('Datos sincronizados desde Firebase:', payload);
@@ -2225,9 +2206,16 @@ function initFirebaseSync() {
         setSaveIndicator('error', SAVE_MESSAGES.error);
       }
     });
-  }else{
-    setSaveIndicator('idle', SAVE_MESSAGES.offline);
+
+  } catch (err) {
+    console.error(`Firebase init attempt ${initFirebaseAttempts} failed:`, err);
+    firebaseSyncConfigured = false;
+    setSaveIndicator('error', SAVE_MESSAGES.error);
   }
+}
+
+function scheduleFirebaseInit() {
+    setSaveIndicator('idle', SAVE_MESSAGES.offline);
 }
 
 function loadScript(src) {
@@ -2243,12 +2231,22 @@ function loadScript(src) {
 
 async function bootstrap() {
   // Cargar los scripts de Firebase y la configuración
-  await loadScript('./js/firebase_reports.js');
-  await import('./main.js');
+  try {
+    await loadScript('./js/firebase_reports.js');
+    await import('./main.js');
+  } catch (error) {
+    console.error("Failed to load Firebase scripts:", error);
+    setSaveIndicator('error', 'Erreur de chargement');
+    return;
+  }
 
-  // Ahora que Firebase está listo, inicializar la sincronización
-  initFirebaseSync();
-
+  // Intentar inicializar Firebase. Si no está listo, se reintentará.
+  const initInterval = setInterval(() => {
+    initFirebaseSync(true);
+    if (firebaseInitialized || initFirebaseAttempts >= MAX_INIT_ATTEMPTS) {
+      clearInterval(initInterval);
+    }
+  }, 3000);
   // El resto de la inicialización de la app
   setSaveIndicator('idle', isOnline() ? SAVE_MESSAGES.idle : SAVE_MESSAGES.offline);
   updateOfflineIndicator();
@@ -2286,6 +2284,11 @@ if(manualModal){
 
 window.addEventListener('online', () => {
   updateOfflineIndicator();
+  // Cuando vuelve a estar en línea, intenta inicializar si no lo estaba
+  if (!firebaseInitialized) {
+    initFirebaseSync();
+  }
+  // Y siempre intenta procesar la cola de sincronización
   processRemoteSync();
 });
 

@@ -55,25 +55,27 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Estrategia Cache-first para otros assets (CSS, JS, Imágenes)
+  // Estrategia Stale-While-Revalidate para assets principales (CSS, JS)
+  // Sirve desde la caché para velocidad, pero actualiza en segundo plano.
   event.respondWith(
-    caches.match(event.request).then(cached => {
-      if (cached) {
-        return cached;
-      }
-      return fetch(event.request).then(response => {
-        // Solo cachear respuestas válidas y de nuestro propio origen.
-        if (response && response.status === 200 && response.type === 'basic') {
-          const responseToCache = response.clone();
-          caches.open(RUNTIME).then(cache => cache.put(event.request, responseToCache));
-        }
-        return response;
-      }).catch(() => {
-        // If both cache and network fail for an image, return a fallback image.
-        if (event.request.destination === 'image') {
-          return caches.match('./img/baby.jpg');
-        }
-      });
+    caches.open(RUNTIME).then(cache => {
+      return cache.match(event.request).then(cachedResponse => {
+        const fetchPromise = fetch(event.request).then(networkResponse => {
+          // Si la respuesta es válida, la guardamos en caché para la próxima vez.
+          if (networkResponse && networkResponse.status === 200) {
+            cache.put(event.request, networkResponse.clone());
+          }
+          return networkResponse;
+        }).catch(() => {
+          // Si la red falla y no hay nada en caché, podría devolverse un fallback.
+          if (event.request.destination === 'image') {
+            return caches.match('./img/baby.jpg');
+          }
+        });
+
+        // Devuelve la respuesta de la caché inmediatamente si existe, si no, espera a la red.
+        return cachedResponse || fetchPromise;
+      })
     })
   );
 });

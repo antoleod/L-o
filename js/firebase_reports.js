@@ -46,7 +46,7 @@
      * @param {string} docId - El ID del documento en Firestore para almacenar los reportes (ej. 'leo-reports').
      */
     init(firebaseApp, docId = 'main-reports') {
-      db = firebase.firestore(firebaseApp);
+      db = firebaseApp.firestore();
       reportsCollection = db.collection('reports');
       reportDocRef = reportsCollection.doc(docId);
 
