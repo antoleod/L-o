@@ -271,6 +271,7 @@ const manualMesureTemp = $('#manual-mesure-temp');
 const manualMesurePoids = $('#manual-mesure-poids');
 const manualMesureTaille = $('#manual-mesure-taille');
 
+const testConnectionBtn = $('#btn-test-connection');
 const SAVE_MESSAGES = {
   idle: 'Prêt',
   saving: 'Synchronisation…',
@@ -2170,6 +2171,24 @@ function initFirebaseSync() {
   }
 }
 
+async function testConnection() {
+  if (!persistenceApi) {
+    alert('Le module de persistance n\'est pas prêt.');
+    return;
+  }
+  setSaveIndicator('saving', 'Test de connexion...');
+  try {
+    // La fonction connect() de l'API de persistance lit depuis la base de données.
+    // C'est un bon moyen de tester la connectivité.
+    await persistenceApi.connect();
+    setSaveIndicator('synced', 'Connexion réussie !');
+    alert('La connexion à la base de données Firebase a réussi.');
+  } catch (error) {
+    console.error('Connection test failed:', error);
+    setSaveIndicator('error', 'Échec de la connexion');
+    alert(`Échec de la connexion à la base de données Firebase.\nErreur: ${error.message}`);
+  }
+}
 function ensureAuthSession(auth, { onAuthStateChanged, signInAnonymously }) {
     return new Promise((resolve, reject) => {
         if (auth.currentUser) {
@@ -2246,6 +2265,8 @@ async function bootstrap() {
     }
   });
 }
+
+testConnectionBtn?.addEventListener('click', testConnection);
 
 addManualBtn?.addEventListener('click', ()=> openManualModal({mode:'create', type:'feed'}));
 footerAddManualBtn?.addEventListener('click', ()=> openManualModal({mode:'create', type:'feed'}));
