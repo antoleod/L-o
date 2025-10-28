@@ -2176,10 +2176,10 @@ async function initFirebaseSync() {
     replaceDataFromSnapshot(initialData, { skipRender: false });
 
     persistenceApi.on((event, payload) => {
+      // Ahora, cualquier 'data-changed' se trata como la fuente de la verdad.
+      // La lógica de fusión compleja ya no es necesaria en el cliente.
       if (event === 'data-changed') {
-        // No mostramos el indicador de "synced" en cada cambio local,
-        // solo cuando los datos vienen del servidor.
-        replaceDataFromSnapshot(payload, { skipRender: false });
+        replaceDataFromSnapshot(payload.snapshot, { skipRender: false });
       } else if (event === 'sync-status') {
         setSaveIndicator(payload.status, payload.message);
       } else if (event === 'server-update') {

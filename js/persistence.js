@@ -155,14 +155,20 @@ export const Persistence = {
       let initialDataResolved = false;
 
       const handleSnapshot = (snap) => {
+        const source = snap.metadata.hasPendingWrites ? "local" : "server";
+        const data = snap.exists() ? normalizeSnapshot(snap.data()) : baseSnapshot();
+
         if (snap.metadata.hasPendingWrites) {
           emit("sync-status", { status: "saving", message: SAVE_MESSAGES.saving });
+          // Cuando hay escrituras pendientes, los datos ya reflejan el estado local.
+          // Simplemente emitimos 'data-changed' para que la UI se actualice si es necesario.
+          emit("data-changed", { snapshot: data, source: "local" });
         } else {
-          emit("server-update", {});
+          // Cuando los datos vienen del servidor, los fusionamos con el estado local.
+          emit("sync-status", { status: "synced", message: SAVE_MESSAGES.synced });
+          emit("data-changed", { snapshot: data, source: "server" });
         }
 
-        const data = snap.exists() ? normalizeSnapshot(snap.data()) : baseSnapshot();
-        emit("data-changed", data);
 
         if (!initialDataResolved) {
           emit("sync-status", { status: "synced", message: SAVE_MESSAGES.synced });
@@ -190,9 +196,12 @@ export const Persistence = {
       throw new Error("Entry requires an id");
     }
     await withMutation((snapshot) => {
-      const filtered = snapshot[key].filter((item) => item && item.id !== entry.id);
-      filtered.push(clone(entry));
-      snapshot[key] = sortEntries(filtered);
+      // Usamos un Map para fusionar de forma segura, preservando las entradas existentes.
+      const entryMap = new Map(
+        snapshot[key].map(item => [item.id, item])
+      );
+      entryMap.set(entry.id, clone(entry));
+      snapshot[key] = sortEntries(Array.from(entryMap.values()));
       return snapshot;
     }, reason);
   },
@@ -207,10 +216,15 @@ export const Persistence = {
       return;
     }
     await withMutation((snapshot) => {
-      const filtered = snapshot[key].filter(
-        (item) => item && !idSet.has(String(item.id))
+      // Filtramos las entradas existentes para eliminar solo las especificadas.
+      const initialCount = snapshot[key].length;
+      snapshot[key] = snapshot[key].filter(
+        (item) => !item || !idSet.has(String(item.id))
       );
-      snapshot[key] = sortEntries(filtered);
+      // Solo devolvemos el snapshot si algo ha cambiado para evitar escrituras innecesarias.
+      if (snapshot[key].length < initialCount) {
+        return snapshot;
+      }
       return snapshot;
     }, reason);
   },
