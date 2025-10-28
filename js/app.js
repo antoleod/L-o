@@ -1180,13 +1180,22 @@ syncHistoryRangeUI();
 renderHistory();
 
 historyRangeBtn?.addEventListener('click', (event) => {
-  openModal('#modal-range-select');
+  event.preventDefault();
+  toggleHistoryRangeMenu();
 });
 
-$('#close-range-select')?.addEventListener('click', () => closeModal('#modal-range-select'));
-
-$('#range-options-container')?.addEventListener('click', (event) => {
+historyRangeMenu?.addEventListener('click', (event) => {
   handleHistoryRangeMenuSelection(event.target);
+});
+
+historyRangeDateInput?.addEventListener('change', () => {
+  const value = historyRangeDateInput.value;
+  if(!value){
+    return;
+  }
+  setHistoryRange('custom', { date: value });
+  closeHistoryRangeMenu();
+  historyRangeBtn?.focus();
 });
 
 statsBtn?.addEventListener('click', () => {
