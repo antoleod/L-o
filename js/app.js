@@ -2222,23 +2222,24 @@ function ensureAuthSession(auth, { onAuthStateChanged, signInAnonymously }) {
 
 async function bootstrap() {
   try {
+    // Iniciar la carga de los módulos y la autenticación en paralelo para acelerar el arranque.
+    const [core, persistenceModule, user] = await Promise.all([
+      loadFirebaseCore(),
+      import('./persistence.js'),
+      // La autenticación se inicia aquí, en paralelo con la carga de módulos.
+      loadFirebaseCore().then(({ auth, onAuthStateChanged, signInAnonymously }) =>
+        ensureAuthSession(auth, { onAuthStateChanged, signInAnonymously })
+      ),
+    ]);
 
-    const {
-      db,
-      storage,
-      auth,
-      onAuthStateChanged,
-      signInAnonymously,
-      storageFns
-    } = await loadFirebaseCore();
+    // Asignar las dependencias una vez que todo esté listo.
+    const { db, storage, storageFns } = core;
+    const { Persistence } = persistenceModule;
 
-    const { Persistence } = await import('./persistence.js');
-    persistenceApi = Persistence; // Assign to the global-like variable
+    persistenceApi = Persistence;
     firebaseDbInstance = db;
     firebaseStorageInstance = storage;
     firebaseStorageFns = storageFns;
-
-    const user = await ensureAuthSession(auth, { onAuthStateChanged, signInAnonymously });
     firebaseAuthUser = user;
     firebaseDocId = user.uid;
 
