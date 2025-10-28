@@ -377,6 +377,38 @@
     </div>
   </div>
 
+  <!-- Modal CONFIRM DELETE -->
+  <div class="modal" id="modal-confirm-delete" aria-hidden="true">
+    <div class="sheet stack">
+      <div class="row modal-header">
+        <h2 id="confirm-delete-title">Confirmer la suppression</h2>
+        <button class="btn btn-ghost btn-compact" id="close-confirm-delete" type="button" aria-label="Fermer la confirmation">Fermer</button>
+      </div>
+
+      <div class="stack">
+        <p id="confirm-delete-message" class="muted" aria-live="polite"></p>
+        <div class="field">
+          <label for="security-pin">Code de sécurité</label>
+          <input
+            id="security-pin"
+            class="input"
+            type="password"
+            inputmode="numeric"
+            pattern="[0-9]*"
+            maxlength="4"
+            autocomplete="one-time-code"
+            placeholder="2410"
+          />
+        </div>
+      </div>
+
+      <div class="footer">
+        <button class="btn btn-ghost" id="cancel-confirm-delete" type="button">Annuler</button>
+        <button class="btn btn-primary" id="confirm-delete-btn" type="button">Supprimer</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Template para los elementos del historial -->
   <template id="history-item-template">
     <div class="item enter history-item">
