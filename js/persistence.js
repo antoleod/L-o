@@ -228,7 +228,14 @@ export const Persistence = {
           }
           initialDataResolved = true;
           clearServerTimer();
+          // Resolve with normalized data so the app can render.
           resolve(data);
+          // Also provide the raw document to listeners for debugging/inspection.
+          try {
+            emit('server-raw', { raw, source, docId: documentId });
+          } catch (e) {
+            // non-fatal
+          }
         }
       };
 
@@ -247,6 +254,9 @@ export const Persistence = {
             }
             initialDataResolved = true;
             resolve(data);
+            try {
+              emit('server-raw', { raw, source: 'fallback-get', docId: documentId });
+            } catch (e) {}
           }).catch(err => {
             console.error('Persistence fallback getDoc failed:', err);
             initialDataResolved = true;

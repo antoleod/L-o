@@ -2194,6 +2194,24 @@ async function initFirebaseSync() {
     // Esperamos a que lleguen los primeros datos y los renderizamos.
     const initialData = await persistenceApi.connect();
     console.log(`Firebase sync connected for document ${firebaseDocId}. Initial data received.`);
+    // Debug: log counts & sample ids so we can compare what's in Firestore vs what's rendered
+    try {
+      const counts = {
+        feeds: Array.isArray(initialData.feeds) ? initialData.feeds.length : 0,
+        elims: Array.isArray(initialData.elims) ? initialData.elims.length : 0,
+        meds: Array.isArray(initialData.meds) ? initialData.meds.length : 0,
+        measurements: Array.isArray(initialData.measurements) ? initialData.measurements.length : 0
+      };
+      const sample = {
+        feeds: (initialData.feeds || []).slice(0,5).map(i => i && i.id).filter(Boolean),
+        elims: (initialData.elims || []).slice(0,5).map(i => i && i.id).filter(Boolean),
+        meds: (initialData.meds || []).slice(0,5).map(i => i && i.id).filter(Boolean),
+        measurements: (initialData.measurements || []).slice(0,5).map(i => i && i.id).filter(Boolean)
+      };
+      console.info('Initial snapshot summary:', counts, sample);
+    } catch (e) {
+      console.debug('Could not summarize initialData', e);
+    }
     replaceDataFromSnapshot(initialData, { skipRender: false });
 
     persistenceApi.on((event, payload) => {
@@ -2201,6 +2219,30 @@ async function initFirebaseSync() {
       // La lógica de fusión compleja ya no es necesaria en el cliente.
       if (event === 'data-changed') {
         replaceDataFromSnapshot(payload.snapshot, { skipRender: false });
+      } else if (event === 'server-raw') {
+        // Debug: server gave us a raw document; log a compact summary so developer can compare
+        try {
+          const raw = payload && payload.raw ? payload.raw : null;
+          if (raw) {
+            const rawCounts = {
+              feeds: Array.isArray(raw.snapshot ? raw.snapshot.feeds : raw.feeds) ? (raw.snapshot ? raw.snapshot.feeds.length : raw.feeds.length) : 0,
+              elims: Array.isArray(raw.snapshot ? raw.snapshot.elims : raw.elims) ? (raw.snapshot ? raw.snapshot.elims.length : raw.elims.length) : 0,
+              meds: Array.isArray(raw.snapshot ? raw.snapshot.meds : raw.meds) ? (raw.snapshot ? raw.snapshot.meds.length : raw.meds.length) : 0,
+              measurements: Array.isArray(raw.snapshot ? raw.snapshot.measurements : raw.measurements) ? (raw.snapshot ? raw.snapshot.measurements.length : raw.measurements.length) : 0
+            };
+            console.info('Server raw document summary for', payload.docId || firebaseDocId, 'source=', payload.source || '?', rawCounts);
+            // Also log a short sample of ids for manual inspection
+            const sampleIds = {
+              feeds: (raw.snapshot ? raw.snapshot.feeds : raw.feeds || []).slice(0,5).map(i=>i && i.id).filter(Boolean),
+              elims: (raw.snapshot ? raw.snapshot.elims : raw.elims || []).slice(0,5).map(i=>i && i.id).filter(Boolean),
+              meds: (raw.snapshot ? raw.snapshot.meds : raw.meds || []).slice(0,5).map(i=>i && i.id).filter(Boolean),
+              measurements: (raw.snapshot ? raw.snapshot.measurements : raw.measurements || []).slice(0,5).map(i=>i && i.id).filter(Boolean)
+            };
+            console.debug('Server raw sample ids:', sampleIds);
+          }
+        } catch (e) {
+          console.debug('Error handling server-raw payload', e);
+        }
       } else if (event === 'sync-status') {
         setSaveIndicator(payload.status, payload.message);
       } else if (event === 'server-update') {
