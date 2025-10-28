@@ -58,15 +58,16 @@ self.addEventListener('fetch', event => {
   // Estrategia Cache-first para otros assets (CSS, JS, Imágenes)
   event.respondWith(
     caches.match(event.request).then(cached => {
-      return cached || fetch(event.request).then(response => {
-        return caches.open(RUNTIME).then(cache => {
-          // Solo cachear respuestas válidas
-          if (response && response.status === 200) {
-            cache.put(event.request, response.clone());
-          }
-          // Devolver la respuesta original, sea válida o no
-          return response.clone();
-        });
+      if (cached) {
+        return cached;
+      }
+      return fetch(event.request).then(response => {
+        // Solo cachear respuestas válidas y de nuestro propio origen.
+        if (response && response.status === 200 && response.type === 'basic') {
+          const responseToCache = response.clone();
+          caches.open(RUNTIME).then(cache => cache.put(event.request, responseToCache));
+        }
+        return response;
       }).catch(() => {
         // If both cache and network fail for an image, return a fallback image.
         if (event.request.destination === 'image') {

@@ -403,28 +403,38 @@ function processRemoteSync(){
 }
 
 function exportReports(){
-  try{
-    const snapshot = cloneDataSnapshot();
-    snapshot.exportedAt = new Date().toISOString();
-    const json = JSON.stringify(snapshot, null, 2);
-    const blob = new Blob([json], {type:'application/json'});
-    const url = URL.createObjectURL(blob);
-    const now = new Date();
-    const pad = (val) => String(val).padStart(2, '0');
-    const filename = `leo-reports-${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}.json`;
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    requestAnimationFrame(() => {
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    });
-    setSaveIndicator('synced', 'Export téléchargé');
-  }catch(err){
-    console.error('Export failed:', err);
-    setSaveIndicator('error', 'Export indisponible');
+  if (exportReportsBtn.classList.contains('is-loading')) return;
+
+  exportReportsBtn.classList.add('is-loading');
+  exportReportsBtn.disabled = true;
+
+  try {
+      const snapshot = cloneDataSnapshot();
+      snapshot.exportedAt = new Date().toISOString();
+      const json = JSON.stringify(snapshot, null, 2);
+      const blob = new Blob([json], {type:'application/json'});
+      const url = URL.createObjectURL(blob);
+      const now = new Date();
+      const pad = (val) => String(val).padStart(2, '0');
+      const filename = `leo-reports-${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}.json`;
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      requestAnimationFrame(() => {
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      });
+      setSaveIndicator('synced', 'Export téléchargé');
+  } catch(err) {
+      console.error('Export failed:', err);
+      setSaveIndicator('error', 'Export indisponible');
+  } finally {
+      setTimeout(() => {
+        exportReportsBtn.classList.remove('is-loading');
+        exportReportsBtn.disabled = false;
+      }, 1000);
   }
 }
 

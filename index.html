@@ -56,9 +56,9 @@
             <span class="caret" aria-hidden="true">▾</span>
           </button>
           <span class="pill" id="count-pill">0</span>
-          <button class="icon-btn icon-btn-secondary" id="export-pdf" type="button" aria-label="Exporter le rapport en PDF">
+          <button class="icon-btn icon-btn-secondary icon-only" id="export-pdf" type="button" aria-label="Exporter le rapport en PDF" style="margin-left: auto;">
             <span class="icon-export" aria-hidden="true"></span>
-            <span class="label">Exporter</span>
+            <span class="spinner" aria-hidden="true"></span>
           </button>
           <div class="range-menu" id="history-range-menu" role="menu" aria-labelledby="history-range-btn">
             <button class="range-option active" type="button" data-range="day" role="menuitemradio" aria-checked="true">
@@ -244,10 +244,10 @@
       </div>
 
       <div class="seg" id="manual-type">
-        <button data-type="feed" class="active" type="button">Lait</button>
-        <button data-type="elim" type="button">Pipi / Caca / Vomi</button>
-        <button data-type="med" type="button">Medicaments</button>
-        <button data-type="measurement" type="button">Mesures</button>
+        <button data-type="feed" class="active" type="button"><span class="btn-icon">🍼</span> Lait</button>
+        <button data-type="elim" type="button"><span class="btn-icon">🚼</span> Couche</button>
+        <button data-type="med" type="button"><span class="btn-icon">💊</span> Meds</button>
+        <button data-type-="measurement" type="button"><span class="btn-icon">🌡️</span> Mesures</button>
       </div>
 
       <div class="stack form-grid" id="manual-feed-fields">
