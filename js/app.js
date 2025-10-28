@@ -1230,14 +1230,6 @@ historyList?.addEventListener('click', (e)=>{
   const deleteBtn = e.target.closest('.item-delete');
 
   if (deleteBtn) {
-    const securityCode = prompt("Pour supprimer, veuillez entrer le code de sécurité :");
-    if (securityCode !== '2410') {
-      if (securityCode !== null) { // No mostrar alerta si el usuario simplemente cancela
-        alert("Code incorrect. La suppression a été annulée.");
-      }
-      return; // Detener el proceso de eliminación
-    }
-
     const {type, id} = deleteBtn.dataset;
     let changed = false;
 
