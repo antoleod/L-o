@@ -8,7 +8,7 @@
 </head>
 <body>
   <input type="file" id="bg-picker" accept="image/*" style="display:none" />
-  <div class="wrap stack">
+  <div class="wrap stack" id="app-container">
     <div id="save-indicator" class="save-indicator" data-state="idle" aria-live="polite">
       <span class="save-icon"></span>
       <span id="save-label" class="save-label">Prêt</span>
@@ -86,6 +86,10 @@
           <button class="btn btn-ghost btn-compact" id="add-manual" type="button">Ajouter manuel</button>
           <button class="btn btn-ghost btn-compact" id="btn-stats" type="button"><span class="btn-icon">📈</span> Statistiques</button>
         </div>
+        <div class="selection-actions is-hidden" id="selection-actions">
+          <button class="btn btn-ghost" id="cancel-select-btn" type="button">Annuler</button>
+          <button class="btn btn-danger" id="delete-selected-btn" type="button" disabled>Supprimer la sélection (0)</button>
+        </div>
       </div>
       <div class="list" id="history"></div>
     </div>
@@ -94,9 +98,9 @@
   <!-- Modal LAIT -->
   <div class="modal" id="modal-leche" aria-hidden="true">
     <div class="sheet stack">
-      <div class="row" style="align-items:center;justify-content:space-between">
-        <h2 style="margin:0">Lait</h2>
-        <button class="btn btn-ghost" id="close-leche" style="width:auto;padding:8px 12px">Fermer</button>
+      <div class="modal-header">
+        <h2>Lait</h2>
+        <button class="btn btn-ghost btn-compact" id="close-leche">Fermer</button>
       </div>
 
       <div class="seg">
@@ -106,22 +110,22 @@
 
       <div class="stack" id="feed-content">
         <!-- Pecho -->
-        <div id="pane-pecho" class="stack" style="flex-grow:1;justify-content:space-around">
-          <div class="seg" style="gap:0; margin: 0 -18px;">
+        <div id="pane-pecho" class="stack pane-content">
+          <div class="seg seg-sides">
             <button id="side-left" class="active">Gauche</button>
             <button id="side-right">Droite</button>
             <button id="side-both">Les deux</button>
           </div>
-          <div style="text-align:center;padding:20px 0">
+          <div class="text-center">
             <div class="time" id="chrono">00:00:00</div>
-            <div id="start-time-display" class="muted" style="min-height:1.2em; margin-top:4px;"></div>
-            <button class="btn btn-primary" id="startStop" style="margin-top:16px">Démarrer</button>
+            <div id="start-time-display" class="muted"></div>
+            <button class="btn btn-primary" id="startStop">Démarrer</button>
           </div>
         </div>
 
         <!-- Biberón -->
         <div id="pane-biberon" class="stack is-hidden">
-          <div class="field" style="margin-top:20px">
+          <div class="field field-padded">
             <label for="ml">Quantité (ml)</label>
             <input id="ml" class="input" type="number" inputmode="numeric" placeholder="ej. 120" />
           </div>
@@ -141,9 +145,9 @@
   <!-- Modal ELIMINACIONES -->
   <div class="modal" id="modal-elim" aria-hidden="true">
     <div class="sheet stack">
-      <div class="row" style="align-items:center;justify-content:space-between">
-        <h2 style="margin:0">Pipi / Caca / Vomi</h2>
-        <button class="btn btn-ghost" id="close-elim" style="width:auto;padding:8px 12px">Fermer</button>
+      <div class="modal-header">
+        <h2>Pipi / Caca / Vomi</h2>
+        <button class="btn btn-ghost btn-compact" id="close-elim">Fermer</button>
       </div>
 
       <div class="stack">
@@ -173,9 +177,9 @@
   <!-- Modal MEDICAMENTS -->
   <div class="modal" id="modal-med" aria-hidden="true">
     <div class="sheet stack">
-      <div class="row" style="align-items:center;justify-content:space-between">
-        <h2 style="margin:0">Medicaments</h2>
-        <button class="btn btn-ghost" id="close-med" style="width:auto;padding:8px 12px" type="button">Fermer</button>
+      <div class="modal-header">
+        <h2>Medicaments</h2>
+        <button class="btn btn-ghost btn-compact" id="close-med" type="button">Fermer</button>
       </div>
 
       <div class="stack">
@@ -204,9 +208,9 @@
   <!-- Modal MESURES -->
   <div class="modal" id="modal-mesures" aria-hidden="true">
     <div class="sheet stack">
-      <div class="row" style="align-items:center;justify-content:space-between">
-        <h2 style="margin:0">Mesures</h2>
-        <button class="btn btn-ghost" id="close-mesures" style="width:auto;padding:8px 12px" type="button">Fermer</button>
+      <div class="modal-header">
+        <h2>Mesures</h2>
+        <button class="btn btn-ghost btn-compact" id="close-mesures" type="button">Fermer</button>
       </div>
 
       <div class="stack form-grid">
@@ -373,16 +377,10 @@
     </div>
   </div>
 
-  <!-- Firebase SDK -->
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
-<!-- Al final del <body>, antes de </body> -->
-<script type="module" src="./js/main.js"></script>
-  <!-- Inicialización de Firebase -->
-
-<script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
-<script src="js/firebase_reports.js" defer></script>
-<script type="module" src="js/app.js"></script> 
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js" defer></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js" defer></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
+  <script type="module" src="js/app.js"></script>
 </body>
 </html>

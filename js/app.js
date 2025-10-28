@@ -257,6 +257,9 @@ const closeManualBtn = $('#close-manual');
 const cancelManualBtn = $('#cancel-manual');
 const saveManualBtn = $('#save-manual');
 const startStopBtn = $('#startStop');
+const cancelSelectBtn = $('#cancel-select-btn');
+const deleteSelectedBtn = $('#delete-selected-btn');
+const selectionActions = $('#selection-actions');
 const startTimeDisplay = $('#start-time-display');
 const manualMedFields = $('#manual-med-fields');
 const manualMedSelect = $('#manual-med-select');
@@ -310,6 +313,7 @@ let manualType = 'feed';
 let timer = 0;
 let timerStart = null;
 let timerInterval = null;
+let isDeleteMode = false;
 
 function cloneDataSnapshot(){
   return {
@@ -378,7 +382,7 @@ function processRemoteSync(){
   remoteSyncQueue.length = 0;
   remoteSyncInFlight = true;
   setSaveIndicator('saving', SAVE_MESSAGES.saving);
-  window.FirebaseReports.saveAll(job.payload, job.reason)
+  window.FirebaseReports.saveAll(job.payload, job.reason, { merge: true })
     .then(() => {
       remoteSyncInFlight = false;
       setSaveIndicator('synced', SAVE_MESSAGES.synced);
@@ -1107,7 +1111,7 @@ function renderHistory(){
       const entriesForDay = groupedByDay[dayKey];
       for (const row of entriesForDay) {
         const div = document.createElement('div');
-        div.className = 'item enter';
+        div.className = 'item enter history-item';
         const dateString = new Date(row.item.dateISO).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
         let title = '';
         if(row.type === 'feed'){
@@ -1140,6 +1144,7 @@ function renderHistory(){
         }
         div.innerHTML = `
           <div class="item-content">
+            <input type="checkbox" class="history-item-checkbox" aria-label="Sélectionner cet élément" data-id="${row.item.id}" data-type="${row.type}">
             <strong>${title}</strong>
             <div class="item-meta">${metaParts.join('')}</div>
           </div>
@@ -1209,55 +1214,134 @@ closeStatsBtn?.addEventListener('click', () => {
   closeModal('#modal-stats');
 });
 
-historyList?.addEventListener('click', (e)=>{
+let longPressTimer = null;
+let longPressTarget = null;
+const LONG_PRESS_DURATION = 500;
 
-  const editBtn = e.target.closest('.item-edit');
+historyList?.addEventListener('pointerdown', (e) => {
+  if (isDeleteMode) return;
+  const item = e.target.closest('.history-item');
+  if (!item) return;
 
-  if(editBtn){
-
-    const {type, id} = editBtn.dataset;
-
-    if(type && id){
-
-      beginEditEntry(type, id);
-
+  longPressTarget = item;
+  longPressTimer = setTimeout(() => {
+    if (longPressTarget) {
+      toggleDeleteMode(true);
+      const checkbox = longPressTarget.querySelector('.history-item-checkbox');
+      if (checkbox) {
+        checkbox.checked = true;
+        longPressTarget.classList.add('is-selected');
+        updateSelectionCount();
+      }
     }
+    longPressTimer = null;
+  }, LONG_PRESS_DURATION);
+});
 
+function cancelLongPress() {
+  if (longPressTimer) {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+  }
+  longPressTarget = null;
+}
+
+historyList?.addEventListener('pointerup', cancelLongPress);
+historyList?.addEventListener('pointerleave', cancelLongPress);
+historyList?.addEventListener('contextmenu', (e) => e.preventDefault()); // Evita el menú contextual
+
+historyList?.addEventListener('click', (e) => {
+  if (longPressTimer) {
+    cancelLongPress();
+  }
+  
+  if (isDeleteMode) {
+    const item = e.target.closest('.history-item');
+    const checkbox = item?.querySelector('.history-item-checkbox');
+    if (item && checkbox && e.target !== checkbox) {
+      checkbox.checked = !checkbox.checked;
+      item.classList.toggle('is-selected', checkbox.checked);
+      updateSelectionCount();
+    } else if (e.target.classList.contains('history-item-checkbox')) {
+      e.target.closest('.item')?.classList.toggle('is-selected', e.target.checked);
+      updateSelectionCount();
+    }
     return;
-
+  }
+  
+  const editBtn = e.target.closest('.item-edit');
+  if (editBtn) {
+    const { type, id } = editBtn.dataset;
+    if (type && id) {
+      beginEditEntry(type, id);
+    }
+    return;
   }
 
   const deleteBtn = e.target.closest('.item-delete');
-
   if (deleteBtn) {
-    const {type, id} = deleteBtn.dataset;
+    const { type, id } = deleteBtn.dataset;
+    confirmAndDelete([{ type, id }]);
+  }
+});
+
+function confirmAndDelete(itemsToDelete) {
+  if (!itemsToDelete || itemsToDelete.length === 0) return;
+
+  const modal = $('#modal-confirm-delete');
+  const messageEl = $('#confirm-delete-message');
+  const pinInput = $('#security-pin');
+  const confirmBtn = $('#confirm-delete-btn');
+  const cancelBtn = $('#cancel-confirm-delete');
+  const closeBtn = $('#close-confirm-delete');
+
+  messageEl.textContent = `Voulez-vous vraiment supprimer ${itemsToDelete.length} élément(s) ?`;
+  pinInput.value = '';
+
+  const closeConfirmModal = () => closeModal('#modal-confirm-delete');
+
+  const onConfirm = () => {
+    if (pinInput.value !== '2410') {
+      alert('Code de sécurité incorrect.');
+      pinInput.value = '';
+      pinInput.focus();
+      return;
+    }
+
     let changed = false;
+    const idsByType = itemsToDelete.reduce((acc, item) => {
+      if (!acc[item.type]) acc[item.type] = new Set();
+      acc[item.type].add(item.id);
+      return acc;
+    }, {});
 
     updateState(currentData => {
-      if (type === 'feed') {
-        currentData.feeds = currentData.feeds.filter(f => f.id !== id);
-        changed = true;
-      } else if (type === 'elim') {
-        currentData.elims = currentData.elims.filter(el => el.id !== id);
-        changed = true;
-      } else if (type === 'med') {
-        currentData.meds = currentData.meds.filter(m => m.id !== id);
-        changed = true;
-      } else if (type === 'measurement') {
-        currentData.measurements = currentData.measurements.filter(m => m.id !== id);
-        changed = true;
+      for (const type in idsByType) {
+        const ids = idsByType[type];
+        if (currentData[type + 's']) {
+          const initialCount = currentData[type + 's'].length;
+          currentData[type + 's'] = currentData[type + 's'].filter(item => !ids.has(item.id));
+          if (currentData[type + 's'].length < initialCount) changed = true;
+        }
       }
       return currentData;
     });
 
     if (changed) {
-      // persistAll is now called inside updateState indirectly
-      enqueueRemoteSync('Delete entry');
+      enqueueRemoteSync(`Delete ${itemsToDelete.length} entries`);
+      renderHistory();
     }
-    deleteBtn.disabled = true;
-    setTimeout(renderHistory, 180);
+    toggleDeleteMode(false);
+    closeConfirmModal();
   }
-});
+
+  confirmBtn.onclick = onConfirm;
+  cancelBtn.onclick = closeConfirmModal;
+  closeBtn.onclick = closeConfirmModal;
+
+  openModal('#modal-confirm-delete');
+  pinInput.focus();
+}
 
 function updateMedSummary(){
   if(!summaryMedEl) return;
@@ -1975,7 +2059,7 @@ function closeManualModal(){
   closeModal('#modal-manual');
 
 }
-
+let firebaseInitialized = false;
 
 
 function beginEditEntry(type, id){
@@ -2108,6 +2192,7 @@ function initFirebaseSync() {
     try {
       const firebaseApp = window.firebase.app();
       window.FirebaseReports.init(firebaseApp, 'leo-reports'); // Usamos 'leo-reports' como ID del documento
+      firebaseInitialized = true;
       firebaseSyncConfigured = true;
       processRemoteSync();
     } catch (err) {
@@ -2134,13 +2219,52 @@ function initFirebaseSync() {
     setSaveIndicator('idle', SAVE_MESSAGES.offline);
   }
 }
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = src;
+    script.async = true;
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+}
+
+async function bootstrap() {
+  // Cargar los scripts de Firebase y la configuración
+  await loadScript('./js/firebase_reports.js');
+  await import('./main.js');
+
+  // Ahora que Firebase está listo, inicializar la sincronización
+  initFirebaseSync();
+
+  // El resto de la inicialización de la app
+  setSaveIndicator('idle', isOnline() ? SAVE_MESSAGES.idle : SAVE_MESSAGES.offline);
+  updateOfflineIndicator();
+
+  cancelSelectBtn?.addEventListener('click', () => toggleDeleteMode(false));
+  deleteSelectedBtn?.addEventListener('click', () => {
+    const selectedItems = $$('.history-item-checkbox:checked', historyList)
+      .map(cb => ({ type: cb.dataset.type, id: cb.dataset.id }));
+
+    if (selectedItems.length > 0) {
+      confirmAndDelete(selectedItems);
+    } else {
+      toggleDeleteMode(false);
+    }
+  });
+}
+
 addManualBtn?.addEventListener('click', ()=> openManualModal({mode:'create', type:'feed'}));
 footerAddManualBtn?.addEventListener('click', ()=> openManualModal({mode:'create', type:'feed'}));
 exportReportsBtn?.addEventListener('click', exportReports);
 footerStatsBtn?.addEventListener('click', () => statsBtn?.click());
 closeManualBtn?.addEventListener('click', closeManualModal);
 cancelManualBtn?.addEventListener('click', closeManualModal);
-saveManualBtn?.addEventListener('click', saveManualEntry);
+saveManualBtn?.addEventListener('click', () => {
+  try { saveManualEntry(); } catch (e) { console.warn(e.message); }
+});
 manualTypeButtons.forEach(btn => btn.addEventListener('click', ()=> setManualType(btn.dataset.type)));
 manualSource?.addEventListener('change', updateManualSourceFields);
 manualMedSelect?.addEventListener('change', updateManualMedFields);
@@ -2149,11 +2273,6 @@ if(manualModal){
   updateManualSourceFields();
   updateManualMedFields();
 }
-
-initFirebaseSync();
-
-setSaveIndicator('idle', isOnline() ? SAVE_MESSAGES.idle : SAVE_MESSAGES.offline);
-updateOfflineIndicator();
 
 window.addEventListener('online', () => {
   updateOfflineIndicator();
@@ -2171,3 +2290,5 @@ if ('serviceWorker' in navigator) {
     });
   });
 }
+
+bootstrap();
