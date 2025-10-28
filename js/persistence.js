@@ -19,6 +19,7 @@ let firestoreInstance = null;
 let documentId = null;
 let reference = null;
 let unsubscribeSnapshot = null;
+let authInstance = null;
 const listeners = new Set();
 
 const clone = (value) => {
@@ -75,14 +76,20 @@ async function ensureDocument() {
   }
   const snap = await getDoc(reference);
   if (!snap.exists()) {
-    await setDoc(reference, {
+    // Include owner if we have an authenticated user available
+    const ownerUid = authInstance && authInstance.currentUser ? authInstance.currentUser.uid : null;
+    const docPayload = {
       snapshot: baseSnapshot(),
       metadata: {
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         lastReason: "Initialise"
       }
-    });
+    };
+    if (ownerUid) {
+      docPayload.owner = ownerUid;
+    }
+    await setDoc(reference, docPayload);
   }
 }
 
@@ -130,7 +137,7 @@ function sortEntries(list) {
 }
 
 export const Persistence = {
-  init(dbInstance, docId) {
+  init(dbInstance, docId, auth) {
     if (!dbInstance) {
       throw new Error("Firestore instance is required");
     }
@@ -140,6 +147,8 @@ export const Persistence = {
     firestoreInstance = dbInstance;
     documentId = docId;
     reference = doc(firestoreInstance, COLLECTION, documentId);
+    // store optional auth instance so we can set owner on initial document
+    authInstance = auth || null;
   },
 
   connect() {

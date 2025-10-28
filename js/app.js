@@ -2178,7 +2178,7 @@ function saveManualEntry(){
 
 
 async function initFirebaseSync() {
-  const { db: firebaseDb } = await import('./firebase.js');
+  const { db: firebaseDb, auth: firebaseAuth } = await import('./firebase.js');
   firebaseDbInstance = firebaseDb;
   if (!firebaseDbInstance || !firebaseDocId) {
     console.warn("Firebase dependencies not ready.");
@@ -2187,7 +2187,8 @@ async function initFirebaseSync() {
   }
 
   try {
-    persistenceApi.init(firebaseDbInstance, firebaseDocId);
+  // pass auth so persistence can set owner on initial document
+  persistenceApi.init(firebaseDbInstance, firebaseDocId, firebaseAuth);
     firebaseInitialized = true;
 
     // Esperamos a que lleguen los primeros datos y los renderizamos.
