@@ -271,6 +271,10 @@ const manualMesureTemp = $('#manual-mesure-temp');
 const manualMesurePoids = $('#manual-mesure-poids');
 const manualMesureTaille = $('#manual-mesure-taille');
 
+// Handlers for the history range menu (declared here to avoid reference errors)
+let historyMenuOutsideHandler = null;
+let historyMenuKeydownHandler = null;
+
 const SAVE_MESSAGES = {
   idle: 'Prêt',
   saving: 'Synchronisation…',
@@ -2249,6 +2253,49 @@ async function initFirebaseSync() {
         setSaveIndicator('synced', 'Données à jour');
       }
     });
+
+    // Create a small floating button to force a background sync (manual getDoc)
+    function createForceSyncButton(){
+      if(document.getElementById('btn-force-sync')) return;
+      const btn = document.createElement('button');
+      btn.id = 'btn-force-sync';
+      btn.title = 'Forzar sincronización';
+      btn.textContent = 'Sync';
+      Object.assign(btn.style, {
+        position: 'fixed',
+        right: '12px',
+        bottom: '12px',
+        zIndex: 9999,
+        padding: '8px 10px',
+        background: '#2563eb',
+        color: '#fff',
+        border: 'none',
+        borderRadius: '6px',
+        boxShadow: '0 2px 6px rgba(0,0,0,0.2)',
+        cursor: 'pointer'
+      });
+      btn.addEventListener('click', async () => {
+        if (!persistenceApi || typeof persistenceApi.fetchServerNow !== 'function') {
+          setSaveIndicator('error', 'API no disponible');
+          return;
+        }
+        try {
+          setSaveIndicator('saving', 'Forzando sincronización...');
+          await persistenceApi.fetchServerNow();
+          setSaveIndicator('synced', 'Sincronización completa');
+          setTimeout(() => {
+            if (saveIndicatorEl && saveIndicatorEl.dataset.state === 'synced') setSaveIndicator('idle');
+          }, 2000);
+        } catch (err) {
+          console.error('Force sync failed:', err);
+          setSaveIndicator('error', 'Error sincronizando');
+        }
+      });
+      document.body.appendChild(btn);
+    }
+
+    // Add the button so the developer/user can trigger a background sync on demand
+    try { createForceSyncButton(); } catch (e) { console.debug('Could not create force-sync button', e); }
 
   } catch (error) {
     console.error("Firebase init failed:", error);
