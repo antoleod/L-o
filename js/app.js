@@ -224,7 +224,6 @@ const saveIndicatorEl = $('#save-indicator');
 const saveLabelEl = $('#save-label');
 const exportReportsBtn = $('#export-pdf');
 const btnElim = $('#btn-elim');
-const medsBtn = $('#btn-med');
 const footerAddManualBtn = $('#footer-add-manual');
 const summaryElimEl = $('#summary-elim');
 const dashboardElimEl = $('#dashboard-elim');
@@ -267,12 +266,6 @@ const manualMedOtherField = $('#manual-med-other-field');
 const manualMedOtherInput = $('#manual-med-other');
 const manualMedDose = $('#manual-med-dose');
 const manualMedNotes = $('#manual-med-notes');
-const medSelect = $('#medication-select');
-const medOtherField = $('#medication-other-field');
-const medOtherInput = $('#medication-other');
-const closeMedBtn = $('#close-med');
-const cancelMedBtn = $('#cancel-med');
-const saveMedBtn = $('#save-med');
 const manualMesuresFields = $('#manual-mesures-fields');
 const manualMesureTemp = $('#manual-mesure-temp');
 const manualMesurePoids = $('#manual-mesure-poids');
@@ -1211,7 +1204,7 @@ function confirmAndDelete(itemsToDelete) {
     });
 
     if (changed) {
-      persistenceApi.deleteEntries(type, Array.from(ids), `Delete ${itemsToDelete.length} entries`);
+      persistenceApi?.deleteEntries?.(type, Array.from(ids), `Delete ${itemsToDelete.length} entries`);
       renderHistory();
     }
     toggleDeleteMode(false);
@@ -1551,7 +1544,7 @@ function saveFeed(entry){
     return currentData;
   });
   closeModal('#modal-leche');
-  persistenceApi.saveEntry('feed', entry, 'Save feed entry');
+  persistenceApi?.saveEntry?.('feed', entry, 'Save feed entry');
   renderHistory();
 }
 
@@ -1637,73 +1630,92 @@ $('#save-elim')?.addEventListener('click', ()=>{
     });
     return currentData;
   });
-  persistenceApi.saveEntry('elim', { id: Date.now()+'', dateISO: new Date().toISOString(), ...scales }, 'Add elimination entry');
+  persistenceApi?.saveEntry?.('elim', { id: Date.now()+'', dateISO: new Date().toISOString(), ...scales }, 'Add elimination entry');
   closeModal('#modal-elim');
   renderHistory();
 });
 
 // ===== Medications modal logic =====
-function updateMedOtherField(){
-  const isOther = medSelect?.value === 'other';
-  medOtherField?.classList?.toggle('is-hidden', !isOther);
-  if(!isOther && medOtherInput){
-    medOtherInput.value = '';
+function setupMedicationModal(){
+  const medsBtn = $('#btn-med');
+  const medSelect = $('#medication-select');
+  const medOtherField = $('#medication-other-field');
+  const medOtherInput = $('#medication-other');
+  const closeMedBtn = $('#close-med');
+  const cancelMedBtn = $('#cancel-med');
+  const saveMedBtn = $('#save-med');
+
+  if(!medsBtn && !medSelect){
+    return;
   }
-}
 
-function resetMedForm(){
-  if(medSelect) medSelect.value = 'ibufrone';
-  updateMedOtherField();
-  if(medOtherInput) medOtherInput.value = '';
-}
-
-function openMedModal(){
-  resetMedForm();
-  updateMedSummary();
-  openModal('#modal-med');
-}
-
-function closeMedModal(){
-  closeModal('#modal-med');
-}
-
-function saveMedication(){
-  if(!medSelect) return;
-  const selection = medSelect.value || 'ibufrone';
-  const labels = {
-    ibufrone: 'Ibufrone',
-    dalfalgan: 'Dalfalgan'
-  };
-  let name = labels[selection] || selection;
-  if(selection === 'other'){
-    name = (medOtherInput?.value || '').trim();
-    if(!name){
-      alert('Veuillez indiquer le nom du medicament.');
-      medOtherInput?.focus();
-      return;
+  const updateMedOtherField = () => {
+    const isOther = medSelect?.value === 'other';
+    medOtherField?.classList?.toggle('is-hidden', !isOther);
+    if(!isOther && medOtherInput){
+      medOtherInput.value = '';
     }
-  }
-  updateState(currentData => {
-    currentData.meds.push({
+  };
+
+  const resetMedForm = () => {
+    if(medSelect) medSelect.value = 'ibufrone';
+    updateMedOtherField();
+    if(medOtherInput) medOtherInput.value = '';
+  };
+
+  const closeMedModal = () => closeModal('#modal-med');
+
+  const saveMedication = () => {
+    if(!medSelect) return;
+    const selection = medSelect.value || 'ibufrone';
+    const labels = {
+      ibufrone: 'Ibufrone',
+      dalfalgan: 'Dalfalgan'
+    };
+    let name = labels[selection] || selection;
+    if(selection === 'other'){
+      name = (medOtherInput?.value || '').trim();
+      if(!name){
+        alert('Veuillez indiquer le nom du medicament.');
+        medOtherInput?.focus();
+        return;
+      }
+    }
+    const entry = {
       id: Date.now()+'',
       dateISO: new Date().toISOString(),
       name,
       medKey: selection
+    };
+    updateState(currentData => {
+      currentData.meds.push(entry);
+      return currentData;
     });
-    return currentData;
-  });
-  updateMedSummary();
-  persistenceApi.saveEntry('med', { id: Date.now()+'', dateISO: new Date().toISOString(), name, medKey: selection }, 'Add medication entry');
-  renderHistory();
-  closeMedModal();
+    updateMedSummary();
+    try {
+      persistenceApi?.saveEntry?.('med', entry, 'Add medication entry');
+    } catch (error) {
+      console.warn('Medication persistence failed:', error);
+    }
+    renderHistory();
+    closeMedModal();
+  };
+
+  const openMedModal = () => {
+    resetMedForm();
+    updateMedSummary();
+    openModal('#modal-med');
+  };
+
+  medsBtn?.addEventListener('click', openMedModal);
+  closeMedBtn?.addEventListener('click', closeMedModal);
+  cancelMedBtn?.addEventListener('click', closeMedModal);
+  saveMedBtn?.addEventListener('click', saveMedication);
+  medSelect?.addEventListener('change', updateMedOtherField);
+  updateMedOtherField();
 }
 
-medsBtn?.addEventListener('click', openMedModal);
-closeMedBtn?.addEventListener('click', closeMedModal);
-cancelMedBtn?.addEventListener('click', closeMedModal);
-saveMedBtn?.addEventListener('click', saveMedication);
-medSelect?.addEventListener('change', updateMedOtherField);
-updateMedOtherField();
+setupMedicationModal();
 
 // ===== Mesures modal logic =====
 const mesuresBtn = $('#btn-mesures');
@@ -1740,7 +1752,7 @@ function saveMesures() {
     currentData.measurements.push(entry);
     return currentData;
   });
-  persistenceApi.saveEntry('measurement', entry, 'Add measurement entry');
+  persistenceApi?.saveEntry?.('measurement', entry, 'Add measurement entry');
   closeModal('#modal-mesures');
   renderHistory();
 }
@@ -2117,7 +2129,7 @@ function saveManualEntry(){
   });
 
   if(reason && entry){
-    persistenceApi.saveEntry(targetType, entry, reason);
+    persistenceApi?.saveEntry?.(targetType, entry, reason);
   }
   closeManualModal();
   renderHistory();
