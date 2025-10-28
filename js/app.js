@@ -358,7 +358,7 @@ function updateOfflineIndicator(){
 }
 
 function enqueueRemoteSync(reason = 'Sync update'){
-  if(!window.FirebaseReports){
+  if(!firebaseInitialized){
     setSaveIndicator('idle', SAVE_MESSAGES.offline);
     return;
   }
@@ -371,7 +371,7 @@ function enqueueRemoteSync(reason = 'Sync update'){
 function processRemoteSync(){
   if(remoteSyncInFlight) return;
   if(!remoteSyncQueue.length) return;
-  if(!window.FirebaseReports || !firebaseSyncConfigured){
+  if(!firebaseReportsApi || !firebaseSyncConfigured){
     return;
   }
   if(!isOnline()){
@@ -382,7 +382,7 @@ function processRemoteSync(){
   remoteSyncQueue.length = 0;
   remoteSyncInFlight = true;
   setSaveIndicator('saving', SAVE_MESSAGES.saving);
-  window.FirebaseReports.saveAll(job.payload, job.reason, { merge: true })
+  firebaseReportsApi.saveAll(job.payload, job.reason, { merge: true })
     .then(() => {
       remoteSyncInFlight = false;
       setSaveIndicator('synced', SAVE_MESSAGES.synced);
@@ -1831,20 +1831,18 @@ function handleBackgroundChange(event) {
   const file = input.files && input.files[0];
   if (!file) return;
 
-  // Verificar si Firebase Storage está disponible
-  if (window.firebase && typeof window.firebase.storage === 'function') {
-    const storageRef = window.firebase.storage().ref();
-    // Usamos una ruta fija para la imagen de perfil, así siempre se sobrescribe la misma.
-    const avatarRef = storageRef.child('backgrounds/leo-main-avatar.jpg');
+  if (firebaseInitialized && firebaseAuthUser && firebaseStorageInstance && firebaseStorageFns) {
+    const { createRef, uploadBytes, getDownloadURL } = firebaseStorageFns;
+    const avatarRef = createRef(firebaseStorageInstance, "backgrounds/leo-main-avatar.jpg");
 
     setSaveIndicator('saving', 'Chargement de la photo...');
 
-    avatarRef.put(file)
-      .then(snapshot => snapshot.ref.getDownloadURL())
+    uploadBytes(avatarRef, file)
+      .then(() => getDownloadURL(avatarRef))
       .then(downloadURL => {
         console.log('Image uploaded to Firebase, URL:', downloadURL);
         setSaveIndicator('synced', 'Photo sauvegardée !');
-        return setHeroImage(downloadURL); // Usar la URL de Firebase
+        return setHeroImage(downloadURL);
       })
       .then(ok => {
         if (ok) {
@@ -2045,6 +2043,13 @@ function closeManualModal(){
 
 }
 let firebaseInitialized = false;
+let firebaseAuthUser = null;
+let firebaseDocId = null;
+let firebaseDbInstance = null;
+let firebaseStorageInstance = null;
+let firebaseStorageFns = null;
+let firebaseReportsApi = null;
+let firebaseReportsUnsubscribe = null;
 
 
 function beginEditEntry(type, id){
@@ -2172,81 +2177,136 @@ function saveManualEntry(){
 }
 
 
-let initFirebaseAttempts = 0;
-const MAX_INIT_ATTEMPTS = 5;
+function initFirebaseSync(options = {}) {
+  const nextDb = options.db || firebaseDbInstance;
+  const nextStorage = options.storage || firebaseStorageInstance;
+  const nextDocId = options.docId || firebaseDocId;
+  const nextStorageFns = options.storageFns || firebaseStorageFns;
 
-function initFirebaseSync(isRetry = false) {
-  if (firebaseInitialized) return;
-  if (!window.firebase || !window.FirebaseReports) {
-    if (!isRetry) console.warn("Firebase SDK not ready. Will retry.");
+  if (!firebaseReportsApi) {
+    console.warn("FirebaseReports API not available yet.");
     return;
   }
 
-  initFirebaseAttempts++;
+  if (!nextDb || !nextStorage || !nextDocId) {
+    console.warn("Firebase dependencies not ready.");
+    return;
+  }
+
+  firebaseDbInstance = nextDb;
+  firebaseStorageInstance = nextStorage;
+  firebaseDocId = nextDocId;
+  firebaseStorageFns = nextStorageFns;
+
   try {
-    const firebaseApp = window.firebase.app();
-    window.FirebaseReports.init(firebaseApp, 'leo-reports');
+    firebaseReportsApi.init(firebaseDbInstance, firebaseDocId);
+
     firebaseInitialized = true;
     firebaseSyncConfigured = true;
-    console.log("Firebase sync initialized successfully.");
-    processRemoteSync(); // Intenta sincronizar inmediatamente
+    console.log(`Firebase sync initialized for document ${firebaseDocId}`);
 
-    // Configurar listeners una sola vez
-    window.FirebaseReports.on((event, payload) => {
-      if (event === 'synced') {
-        console.log('Datos sincronizados desde Firebase:', payload);
-        replaceDataFromSnapshot(payload, { persistLocal: true, skipRender: false });
-        if(isOnline()){
-          setSaveIndicator('synced', 'Synchronisé depuis le cloud');
+    if (!firebaseReportsUnsubscribe) {
+      firebaseReportsUnsubscribe = firebaseReportsApi.on((event, payload) => {
+        if (event === 'synced') {
+          console.log('Datos sincronizados desde Firebase:', payload);
+          replaceDataFromSnapshot(payload, { persistLocal: true, skipRender: false });
+          if (isOnline()) setSaveIndicator('synced', 'Synchronise depuis le cloud');
+        } else if (event === 'configured') {
+          firebaseSyncConfigured = true;
+          processRemoteSync();
+        } else if (event === 'error') {
+          setSaveIndicator('error', SAVE_MESSAGES.error);
         }
-      } else if (event === 'configured') {
-        firebaseSyncConfigured = true;
-        processRemoteSync();
-      } else if (event === 'error') {
-        setSaveIndicator('error', SAVE_MESSAGES.error);
-      }
-    });
+      });
+    }
 
-  } catch (err) {
-    console.error(`Firebase init attempt ${initFirebaseAttempts} failed:`, err);
+    processRemoteSync();
+  } catch (error) {
+    console.error("Firebase init failed:", error);
     firebaseSyncConfigured = false;
     setSaveIndicator('error', SAVE_MESSAGES.error);
   }
 }
 
-function scheduleFirebaseInit() {
-    setSaveIndicator('idle', SAVE_MESSAGES.offline);
-}
-
-function loadScript(src) {
+function ensureAuthSession(auth, { onAuthStateChanged, signInAnonymously }) {
   return new Promise((resolve, reject) => {
-    const script = document.createElement('script');
-    script.src = src;
-    script.async = true;
-    script.onload = resolve;
-    script.onerror = reject;
-    document.head.appendChild(script);
+    if (!auth || typeof onAuthStateChanged !== 'function' || typeof signInAnonymously !== 'function') {
+      reject(new Error("Firebase Auth helpers not available."));
+      return;
+    }
+
+    let signInRequested = false;
+    const unsubscribe = onAuthStateChanged(auth, user => {
+      if (user) {
+        unsubscribe();
+        resolve(user);
+        return;
+      }
+      if (!signInRequested) {
+        signInRequested = true;
+        signInAnonymously(auth).catch(error => {
+          unsubscribe();
+          reject(error);
+        });
+      }
+    }, error => {
+      unsubscribe();
+      reject(error);
+    });
   });
 }
 
 async function bootstrap() {
   // Cargar los scripts de Firebase y la configuración
+  let modules;
   try {
-    await loadScript('./js/firebase_reports.js');
-    await import('../main.js');
+    modules = await Promise.all([
+      import('../main.js'),
+      import('./firebase_reports.js')
+    ]);
   } catch (error) {
     console.error("Failed to load Firebase scripts:", error);
     setSaveIndicator('error', 'Erreur de chargement');
     return;
   }
 
-  // Intentar inicializar Firebase. Si no está listo, se reintentará.
-  const initInterval = setInterval(() => {
-    initFirebaseSync(true);
-    if (firebaseInitialized || initFirebaseAttempts >= MAX_INIT_ATTEMPTS) {
-      clearInterval(initInterval);
-    }
-  }, 3000);
+  const [{
+    db,
+    storage,
+    auth,
+    onAuthStateChanged,
+    signInAnonymously,
+    ref: createStorageRef,
+    uploadBytes,
+    getDownloadURL
+  }, { FirebaseReports }] = modules;
+
+  firebaseReportsApi = FirebaseReports;
+  firebaseDbInstance = db;
+  firebaseStorageInstance = storage;
+  firebaseStorageFns = {
+    createRef: (instance, path) => createStorageRef(instance, path),
+    uploadBytes,
+    getDownloadURL
+  };
+
+  try {
+    const user = await ensureAuthSession(auth, { onAuthStateChanged, signInAnonymously });
+    firebaseAuthUser = user;
+    firebaseDocId = user.uid;
+  } catch (authError) {
+    console.error("Firebase auth failed:", authError);
+  }
+
+  if (firebaseDocId) {
+    initFirebaseSync({
+      db: firebaseDbInstance,
+      storage: firebaseStorageInstance,
+      docId: firebaseDocId,
+      storageFns: firebaseStorageFns
+    });
+  }
+
   // El resto de la inicialización de la app
   setSaveIndicator('idle', isOnline() ? SAVE_MESSAGES.idle : SAVE_MESSAGES.offline);
   updateOfflineIndicator();

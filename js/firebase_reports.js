@@ -1,148 +1,165 @@
 /* Firebase report storage.
    Provides helpers to sync reports with Firestore in real-time. */
-(function(global) {
-  // Las funciones de Firebase SDK estarán en el objeto global `firebase`
-  let db;
-  let listeners = new Set();
-  let reportsCollection;
-  let unsubscribe = null; // Para guardar la función de cancelación del listener de Firestore
-  let reportDocRef;
 
-  function emit(event, payload) {
-    for (const fn of listeners) {
-      try {
-        fn(event, payload);
-      } catch (e) {
-        console.error('Error in listener:', e);
-      }
+import {
+  doc,
+  onSnapshot,
+  runTransaction,
+  setDoc
+} from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+
+const listeners = new Set();
+
+function emit(event, payload) {
+  for (const fn of listeners) {
+    try {
+      fn(event, payload);
+    } catch (error) {
+      console.error("Error in listener:", error);
     }
   }
+}
 
-  function structuredClone(value) {
+function deepClone(value) {
+  try {
     return JSON.parse(JSON.stringify(value));
+  } catch {
+    return value;
+  }
+}
+
+function createEmptyPayload() {
+  return {
+    feeds: [],
+    elims: [],
+    meds: [],
+    measurements: [],
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function normalizePayload(data = {}) {
+  const empty = createEmptyPayload();
+  return {
+    feeds: Array.isArray(data.feeds) ? data.feeds : empty.feeds,
+    elims: Array.isArray(data.elims) ? data.elims : empty.elims,
+    meds: Array.isArray(data.meds) ? data.meds : empty.meds,
+    measurements: Array.isArray(data.measurements) ? data.measurements : empty.measurements,
+    updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : empty.updatedAt
+  };
+}
+
+function sortKey(entry) {
+  if (!entry || typeof entry !== "object") {
+    return "";
+  }
+  return entry.dateISO || entry.updatedAt || "";
+}
+
+function uniqueMerge(baseList = [], incomingList = [], key = "id") {
+  const seen = new Map();
+
+  for (const item of Array.isArray(baseList) ? baseList : []) {
+    if (item && item[key]) {
+      seen.set(item[key], item);
+    }
   }
 
-  function uniqueMerge(baseList = [], incomingList = [], key = 'id') {
-    const seen = new Map();
-    // Prioriza los elementos más nuevos (incoming) sobre los más antiguos (base)
-    for (const item of baseList) {
-      if (item && item[key]) {
-        seen.set(item[key], item);
-      }
+  for (const item of Array.isArray(incomingList) ? incomingList : []) {
+    if (item && item[key]) {
+      seen.set(item[key], item);
     }
-    for (const item of incomingList) {
-      if (item && item[key]) {
-        seen.set(item[key], item);
-      }
-    }
-    return Array.from(seen.values())
-      .sort((a, b) => (a.dateISO < b.dateISO ? 1 : -1));
   }
 
-  const api = {
-    /**
-     * Inicializa la conexión de Firebase y configura los listeners en tiempo real.
-     * @param {object} firebaseApp - La instancia de la app de Firebase inicializada.
-     * @param {string} docId - El ID del documento en Firestore para almacenar los reportes (ej. 'leo-reports').
-     */
-    init(firebaseApp, docId = 'main-reports') {
-      db = firebaseApp.firestore();
-      reportsCollection = db.collection('reports');
-      reportDocRef = reportsCollection.doc(docId);
+  return Array.from(seen.values()).sort((a, b) => {
+    const left = sortKey(a);
+    const right = sortKey(b);
+    if (left === right) return 0;
+    return left < right ? 1 : -1;
+  });
+}
 
-      // Cancelar cualquier listener anterior
-      if (unsubscribe) {
-        unsubscribe();
+const api = {
+  init(firestoreInstance, docId = "main-reports") {
+    if (!firestoreInstance) throw new Error("Firestore instance required for FirebaseReports.init");
+
+    this.db = firestoreInstance;
+    this.reportDocRef = doc(this.db, "reports", docId);
+
+    if (this.unsubscribe) {
+      this.unsubscribe();
+      this.unsubscribe = null;
+    }
+
+    this.unsubscribe = onSnapshot(
+      this.reportDocRef,
+      snapshot => {
+        const payload = snapshot.exists() ? normalizePayload(snapshot.data()) : createEmptyPayload();
+        emit("synced", deepClone(payload));
+      },
+      error => {
+        console.error("Error al escuchar los cambios de Firestore:", error);
+        emit("error", error);
       }
+    );
 
-      // Escuchar cambios en el documento en tiempo real
-      unsubscribe = reportDocRef.onSnapshot(docSnapshot => {
-        if (docSnapshot.exists) {
-          const data = docSnapshot.data();
-          emit('synced', structuredClone(data));
-        } else {
-          // El documento no existe, podemos crearlo con datos iniciales si es necesario
-          console.log('El documento de reportes no existe. Se creará al guardar el primer dato.');
-          const emptyData = { feeds: [], elims: [], meds: [], updatedAt: new Date().toISOString() };
-          emit('synced', emptyData);
-        }
-      }, err => {
-        console.error('Error al escuchar los cambios de Firestore:', err);
-        emit('error', err);
-      });
+    emit("configured", { docId });
+  },
 
-      emit('configured', { docId });
-    },
+  on(listener) {
+    listeners.add(listener);
+    return () => listeners.delete(listener);
+  },
 
-    /**
-     * Registra una función para escuchar eventos ('synced', 'error', 'configured').
-     */
-    on(listener) {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
+  async saveAll(payload, message = "Sync reports", { merge = true } = {}) {
+    if (!this.reportDocRef) throw new Error("Firebase not initialized. Call init() first.");
 
-    /**
-     * Guarda todo el conjunto de datos en Firestore.
-     * Esto sobrescribirá los datos existentes en el documento.
-     * @param {object} payload - El objeto completo de datos { feeds, elims, meds }.
-     * @param {string} message - Mensaje descriptivo (opcional, para consistencia con la API anterior).
-     */
-    async saveAll(payload, message = 'Sync reports', { merge = true } = {}) {
-      if (!reportDocRef) throw new Error('Firebase not initialized. Call init() first.');
-      
-      if (merge) {
-        return this.mergeAll(payload, message);
-      }
+    if (merge) {
+      return this.mergeAll(payload, message);
+    }
 
-      try {
-        const dataToSave = {
-          ...payload,
+    try {
+      const normalized = normalizePayload(payload);
+      const dataToSave = {
+        ...normalized,
+        updatedAt: new Date().toISOString()
+      };
+      await setDoc(this.reportDocRef, dataToSave);
+      console.log(`[Firebase] ${message}`);
+    } catch (error) {
+      console.error("Error al guardar en Firestore:", error);
+      emit("error", error);
+      throw error;
+    }
+  },
+
+  async mergeAll(localData = {}, message = "Merge reports") {
+    if (!this.db) throw new Error("Firebase not initialized.");
+
+    const local = normalizePayload(localData);
+
+    try {
+      await runTransaction(this.db, async transaction => {
+        const snapshot = await transaction.get(this.reportDocRef);
+        const remote = snapshot.exists() ? normalizePayload(snapshot.data()) : createEmptyPayload();
+
+        const mergedData = {
+          feeds: uniqueMerge(remote.feeds, local.feeds),
+          elims: uniqueMerge(remote.elims, local.elims),
+          meds: uniqueMerge(remote.meds, local.meds),
+          measurements: uniqueMerge(remote.measurements, local.measurements),
           updatedAt: new Date().toISOString()
         };
-        await reportDocRef.set(dataToSave);
-        console.log(`[Firebase] ${message}`);
-      } catch (err) {
-        console.error('Error al guardar en Firestore:', err);
-        emit('error', err);
-        throw err;
-      }
-    },
 
-    /**
-     * Combina los datos locales con los remotos y guarda el resultado.
-     * @param {object} localData - El objeto de datos local.
-     * @param {string} message - Mensaje para el log.
-     */
-    async mergeAll(localData, message = 'Merge reports') {
-      if (!db) throw new Error('Firebase not initialized.');
-      try {
-        await db.runTransaction(async (transaction) => {
-          const doc = await transaction.get(reportDocRef);
-          const remoteData = doc.exists ? doc.data() : {};
-
-          const mergedData = {
-            feeds: uniqueMerge(remoteData.feeds, localData.feeds),
-            elims: uniqueMerge(remoteData.elims, localData.elims),
-            meds: uniqueMerge(remoteData.meds, localData.meds),
-            measurements: uniqueMerge(remoteData.measurements, localData.measurements),
-            updatedAt: new Date().toISOString(),
-          };
-          transaction.set(reportDocRef, mergedData);
-        });
-        console.log(`[Firebase] ${message}`);
-      } catch (err) {
-        console.error('Error al fusionar datos en Firestore:', err);
-        emit('error', err);
-        throw err; // Propagar el error
-      }
-    },
-
-    // ... (el resto de las funciones de la API de Firebase)
-  };
-
-  // ¡IMPORTANTE! Asigna la API al objeto global para que sea accesible.
-  if (global) {
-    global.FirebaseReports = api;
+        transaction.set(this.reportDocRef, mergedData, { merge: false });
+      });
+      console.log(`[Firebase] ${message}`);
+    } catch (error) {
+      console.error("Error al fusionar datos en Firestore:", error);
+      emit("error", error);
+      throw error;
+    }
   }
-})(typeof window !== 'undefined' ? window : this);
+};
+
+export const FirebaseReports = api;

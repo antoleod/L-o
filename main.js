@@ -1,5 +1,16 @@
-// No necesitas importar desde firebase-init.js si lo configuras aquí.
-// Este archivo se convierte en el punto central de la inicialización de Firebase.
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+import { getFirestore } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+import {
+  getAuth,
+  onAuthStateChanged,
+  signInAnonymously
+} from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
+import {
+  getStorage,
+  ref,
+  uploadBytes,
+  getDownloadURL
+} from "https://www.gstatic.com/firebasejs/11.0.1/firebase-storage.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCRvodMEsVaZ0ynCqTTR8quIAAvW445kzE",
@@ -11,12 +22,14 @@ const firebaseConfig = {
   measurementId: "G-BG54P5T72H"
 };
 
-// Inicializa Firebase
-const app = firebase.initializeApp(firebaseConfig);
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
 
-// Exporta los servicios que usarás en otros módulos
-export const db = firebase.firestore(app);
-export const auth = firebase.auth(app);
-export const storage = firebase.storage(app);
+// Export the services you will use in other modules
+export const db = getFirestore(app);
+export const auth = getAuth(app);
+export const storage = getStorage(app);
+export { onAuthStateChanged, signInAnonymously };
+export { ref, uploadBytes, getDownloadURL };
 
 console.log("Firebase OK", { db, auth, storage });
