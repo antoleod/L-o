@@ -10,6 +10,7 @@ import {
   uploadBytes,
   getDownloadURL,
 } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-storage.js";
+import { getAuth, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
 
 const FIREBASE_CONFIG = Object.freeze({
   apiKey: "AIzaSyCRvodMEsVaZ0ynCqTTR8quIAAvW445kzE",
@@ -24,7 +25,6 @@ const FIREBASE_CONFIG = Object.freeze({
 const app = initializeApp(FIREBASE_CONFIG);
 
 // App Check enforcement is disabled in console while we finish the migration without auth.
-
 export const db = initializeFirestore(app, {
   localCache: persistentLocalCache({
     tabManager: persistentMultipleTabManager(),
@@ -33,6 +33,25 @@ export const db = initializeFirestore(app, {
 
 export const storage = getStorage(app);
 
+// Authentication: attempt anonymous sign-in so rules that require auth pass for clients
+export const auth = getAuth(app);
+
+let _authReadyPromise = null;
+export function ensureAuth() {
+  if (_authReadyPromise) return _authReadyPromise;
+  _authReadyPromise = new Promise((resolve) => {
+    onAuthStateChanged(auth, (user) => {
+      // resolve when we have a user (could be null if not signed in)
+      resolve(user);
+    });
+  });
+  // Try to sign in anonymously; if it fails we still resolve when auth state changes
+  signInAnonymously(auth).catch((err) => {
+    console.warn("Anonymous sign-in failed:", err);
+  });
+  return _authReadyPromise;
+}
+
 export const storageFns = Object.freeze({
   createRef: (instance, path) => storageRef(instance, path),
   uploadBytes,
@@ -40,3 +59,12 @@ export const storageFns = Object.freeze({
 });
 
 export { app };
+
+export default {
+  app,
+  db,
+  storage,
+  storageFns,
+  auth,
+  ensureAuth
+};

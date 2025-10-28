@@ -2215,7 +2215,7 @@ async function initFirebaseSync() {
 
 async function bootstrap() {
   try {
-    const { db, storage, storageFns } = await import('./firebase.js');
+  const { db, storage, storageFns, ensureAuth } = await import('./firebase.js');
     const persistenceModule = await import('./persistence.js');
     const { Persistence } = persistenceModule;
 
@@ -2227,6 +2227,15 @@ async function bootstrap() {
 
     setSaveIndicator('idle', isOnline() ? SAVE_MESSAGES.idle : SAVE_MESSAGES.offline);
     updateOfflineIndicator();
+
+    // Ensure the user is authenticated (attempt anonymous sign-in) before starting sync.
+    try {
+      if (typeof ensureAuth === 'function') {
+        await ensureAuth();
+      }
+    } catch (e) {
+      console.warn('ensureAuth failed:', e);
+    }
 
     await initFirebaseSync();
   } catch (error) {
