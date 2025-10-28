@@ -1,4 +1,4 @@
-import { doc, setDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+import { doc, setDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-firestore.js";
 import { loadFirebaseCore } from "./firebase-core.js";
 
 export const FirebaseReports = (() => {

@@ -1207,7 +1207,8 @@ function confirmAndDelete(itemsToDelete) {
     if (changed) {
       for (const type in idsByType) {
         const idsToDelete = Array.from(idsByType[type]);
-        persistenceApi?.deleteEntries?.(type, idsToDelete, `Delete ${idsToDelete.length} ${type}(s)`);
+        const api = getPersistenceApi();
+        api?.deleteEntries?.(type, idsToDelete, `Delete ${idsToDelete.length} ${type}(s)`);
       }
     }
     toggleDeleteMode(false);
@@ -1547,7 +1548,8 @@ function saveFeed(entry){
     return currentData;
   });
   closeModal('#modal-leche');
-  persistenceApi?.saveEntry?.('feed', entry, 'Save feed entry');
+  const api = getPersistenceApi();
+  api?.saveEntry?.('feed', entry, 'Save feed entry');
   renderHistory();
 }
 
@@ -1633,7 +1635,8 @@ $('#save-elim')?.addEventListener('click', ()=>{
     });
     return currentData;
   });
-  persistenceApi?.saveEntry?.('elim', { id: Date.now()+'', dateISO: new Date().toISOString(), ...scales }, 'Add elimination entry');
+  const api = getPersistenceApi();
+  api?.saveEntry?.('elim', { id: Date.now()+'', dateISO: new Date().toISOString(), ...scales }, 'Add elimination entry');
   closeModal('#modal-elim');
   renderHistory();
 });
@@ -1696,7 +1699,8 @@ function setupMedicationModal(){
     });
     updateMedSummary();
     try {
-      persistenceApi?.saveEntry?.('med', entry, 'Add medication entry');
+      const api = getPersistenceApi();
+      api?.saveEntry?.('med', entry, 'Add medication entry');
     } catch (error) {
       console.warn('Medication persistence failed:', error);
     }
@@ -1755,7 +1759,8 @@ function saveMesures() {
     currentData.measurements.push(entry);
     return currentData;
   });
-  persistenceApi?.saveEntry?.('measurement', entry, 'Add measurement entry');
+  const api = getPersistenceApi();
+  api?.saveEntry?.('measurement', entry, 'Add measurement entry');
   closeModal('#modal-mesures');
   renderHistory();
 }
@@ -2132,7 +2137,8 @@ function saveManualEntry(){
   });
 
   if(reason && entry){
-    persistenceApi?.saveEntry?.(targetType, entry, reason);
+    const api = getPersistenceApi();
+    api?.saveEntry?.(targetType, entry, reason);
   }
   closeManualModal();
   renderHistory();

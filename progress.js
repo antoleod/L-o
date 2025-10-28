@@ -1,23 +1,24 @@
 import { loadFirebaseCore } from "./js/firebase-core.js";
-import { doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
 
-let dbPromise = null;
+let firebaseApiPromise = null;
 
-async function getDb() {
-  if (!dbPromise) {
-    dbPromise = loadFirebaseCore().then(core => core.db);
+async function getFirebaseApi() {
+  if (!firebaseApiPromise) {
+    firebaseApiPromise = loadFirebaseCore();
   }
-  return dbPromise;
+  return firebaseApiPromise;
 }
 
 export async function saveProgress(userId, gameId, data) {
-  const db = await getDb();
+  const { db, firestoreFns } = await getFirebaseApi();
+  const { doc, setDoc } = firestoreFns;
   const ref = doc(db, "progress", `${userId}_${gameId}`);
   await setDoc(ref, { ...data, updatedAt: Date.now() }, { merge: true });
 }
 
 export async function loadProgress(userId, gameId) {
-  const db = await getDb();
+  const { db, firestoreFns } = await getFirebaseApi();
+  const { doc, getDoc } = firestoreFns;
   const ref = doc(db, "progress", `${userId}_${gameId}`);
   const snap = await getDoc(ref);
   return snap.exists() ? snap.data() : null;
