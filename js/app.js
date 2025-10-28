@@ -2276,7 +2276,7 @@ async function initFirebaseSync() {
         meds: (initialData.meds || []).slice(0,5).map(i => i && i.id).filter(Boolean),
         measurements: (initialData.measurements || []).slice(0,5).map(i => i && i.id).filter(Boolean)
       };
-      console.info('Initial snapshot summary:', counts, sample);
+      console.info('Initial snapshot summary:', { counts, sample });
     } catch (e) {
       console.debug('Could not summarize initialData', e);
     }
