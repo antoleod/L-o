@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-app.js";
-import { getFirestore, enableIndexedDbPersistence, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-firestore.js";
+import { initializeFirestore, doc, setDoc, getDoc, CACHE_SIZE_UNLIMITED } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-firestore.js";
 import { getAuth, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-auth.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-storage.js";
 // import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app-check.js";
@@ -27,8 +27,10 @@ export function loadFirebaseCore() {
       // App Check (reCAPTCHA) está desactivado para el desarrollo.
       const appCheck = null;
   
-      const db = getFirestore(app);
-      await enableIndexedDbPersistence(db);
+      const db = initializeFirestore(app, {
+        cacheSizeBytes: CACHE_SIZE_UNLIMITED
+      });
+
       console.log("Firebase offline persistence enabled.");
       const auth = getAuth(app);
       const storage = getStorage(app);

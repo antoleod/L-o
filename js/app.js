@@ -2264,7 +2264,12 @@ exportReportsBtn?.addEventListener('click', exportReports);
 closeManualBtn?.addEventListener('click', closeManualModal);
 cancelManualBtn?.addEventListener('click', closeManualModal);
 saveManualBtn?.addEventListener('click', () => {
-  try { saveManualEntry(); } catch (e) { console.warn(e.message); }
+  try {
+    saveManualEntry();
+  } catch (e) {
+    console.warn("Save manual entry failed:", e.message);
+    // Alert the user that something went wrong, as the function might have bailed early.
+  }
 });
 manualTypeButtons.forEach(btn => btn.addEventListener('click', ()=> setManualType(btn.dataset.type)));
 manualSource?.addEventListener('change', updateManualSourceFields);
