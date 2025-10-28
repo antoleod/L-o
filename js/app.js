@@ -1981,68 +1981,7 @@ function closeManualModal(){
 
 }
 
-const FIREBASE_MODULE_URLS = {
-  app: "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js",
-  firestore: "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js",
-  auth: "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js",
-  storage: "https://www.gstatic.com/firebasejs/11.0.1/firebase-storage.js"
-};
-
-const firebaseConfig = {
-  apiKey: "AIzaSyCRvodMEsVaZ0ynCqTTR8quIAAvW445kzE",
-  authDomain: "appleo-a0ba4.firebaseapp.com",
-  projectId: "appleo-a0ba4",
-  storageBucket: "appleo-a0ba4.firebasestorage.app",
-  messagingSenderId: "1045704718169",
-  appId: "1:1045704718169:web:c422f19c13176efae6be48",
-  measurementId: "G-BG54P5T72H"
-};
-
-let firebaseCorePromise = null;
-
-async function loadFirebaseCore(){
-  if(firebaseCorePromise){
-    return firebaseCorePromise;
-  }
-
-  firebaseCorePromise = (async () => {
-    const [
-      appModule,
-      firestoreModule,
-      authModule,
-      storageModule
-    ] = await Promise.all([
-      import(FIREBASE_MODULE_URLS.app),
-      import(FIREBASE_MODULE_URLS.firestore),
-      import(FIREBASE_MODULE_URLS.auth),
-      import(FIREBASE_MODULE_URLS.storage)
-    ]);
-
-    const app = appModule.initializeApp(firebaseConfig);
-    const db = firestoreModule.getFirestore(app);
-    const auth = authModule.getAuth(app);
-    const storage = storageModule.getStorage(app);
-
-    return {
-      app,
-      db,
-      auth,
-      storage,
-      onAuthStateChanged: authModule.onAuthStateChanged,
-      signInAnonymously: authModule.signInAnonymously,
-      storageFns: {
-        createRef: (instance, path) => storageModule.ref(instance, path),
-        uploadBytes: storageModule.uploadBytes,
-        getDownloadURL: storageModule.getDownloadURL
-      }
-    };
-  })().catch(error => {
-    firebaseCorePromise = null;
-    throw error;
-  });
-
-  return firebaseCorePromise;
-}
+import { loadFirebaseCore } from './firebase-core.js';
 
 let firebaseInitialized = false;
 let firebaseAuthUser = null;
@@ -2212,31 +2151,28 @@ function initFirebaseSync() {
 }
 
 function ensureAuthSession(auth, { onAuthStateChanged, signInAnonymously }) {
-  return new Promise((resolve, reject) => {
-    if (!auth || typeof onAuthStateChanged !== 'function' || typeof signInAnonymously !== 'function') {
-      reject(new Error("Firebase Auth helpers not available."));
-      return;
-    }
+    return new Promise((resolve, reject) => {
+        if (auth.currentUser) {
+            return resolve(auth.currentUser);
+        }
 
-    let signInRequested = false;
-    const unsubscribe = onAuthStateChanged(auth, user => {
-      if (user) {
-        unsubscribe();
-        resolve(user);
-        return;
-      }
-      if (!signInRequested) {
-        signInRequested = true;
-        signInAnonymously(auth).catch(error => {
-          unsubscribe();
-          reject(error);
+        let signInTriggered = false;
+        const unsubscribe = onAuthStateChanged(auth, user => {
+            if (user) {
+                unsubscribe();
+                resolve(user);
+            } else if (!signInTriggered) {
+                signInTriggered = true;
+                signInAnonymously(auth).catch(err => {
+                    unsubscribe();
+                    reject(err);
+                });
+            }
+        }, error => {
+            unsubscribe();
+            reject(error);
         });
-      }
-    }, error => {
-      unsubscribe();
-      reject(error);
     });
-  });
 }
 
 async function bootstrap() {
@@ -2244,8 +2180,7 @@ async function bootstrap() {
     // Cargar los módulos de Firebase y nuestro módulo de persistencia
     const [firebaseCore, persistenceModule] = await Promise.all([
       loadFirebaseCore(),
-      // import('./firebase_reports.js') // Ya no se usa
-      import('./persistence.js')
+      import('./persistence.js'),
     ]);
 
     const {

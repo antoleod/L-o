@@ -6,7 +6,8 @@ const PRECACHE_URLS = [
   './index.html',
   './css/styles.css',
   './js/app.js', // Assuming this is the correct sync script
-  './js/firebase_reports.js', // Assuming this is the correct sync script
+  './js/persistence.js',
+  './js/firebase-core.js',
   './img/baby.jpg',
   './img/baby1.jpg'
 ];

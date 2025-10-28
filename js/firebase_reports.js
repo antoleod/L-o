@@ -1,4 +1,5 @@
 import { doc, setDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+import { loadFirebaseCore } from "./firebase-core.js";
 
 export const FirebaseReports = (() => {
   let db = null;
@@ -27,12 +28,19 @@ export const FirebaseReports = (() => {
     };
   }
 
-  function init(firestoreInstance, documentId) {
-    if (!firestoreInstance || !documentId) {
-      throw new Error("Firestore instance and document ID are required for init.");
+  function teardown() {
+    if (unsubscribe) {
+      unsubscribe();
+      unsubscribe = null;
     }
-    db = firestoreInstance;
-    docId = documentId;
+    db = null;
+    docId = null;
+  }
+
+  function attachSnapshot() {
+    if (!db || !docId) {
+      throw new Error("FirebaseReports not initialized. Call init() first.");
+    }
 
     if (unsubscribe) {
       unsubscribe();
@@ -43,7 +51,6 @@ export const FirebaseReports = (() => {
     unsubscribe = onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
-        // Avoid emitting sync event for local writes reflected back
         if (data && !docSnap.metadata.hasPendingWrites) {
           emit('synced', data.snapshot);
         }
@@ -55,6 +62,25 @@ export const FirebaseReports = (() => {
       console.error("Firebase onSnapshot error:", error);
       emit('error', error);
     });
+  }
+
+  function init(firestoreInstanceOrDocId, maybeDocumentId) {
+    if (typeof firestoreInstanceOrDocId === 'string' && !maybeDocumentId) {
+      const documentId = firestoreInstanceOrDocId;
+      return loadFirebaseCore().then(core => {
+        db = core.db;
+        docId = documentId;
+        attachSnapshot();
+      });
+    }
+
+    if (!firestoreInstanceOrDocId || !maybeDocumentId) {
+      throw new Error("Firestore instance and document ID are required for init.");
+    }
+
+    db = firestoreInstanceOrDocId;
+    docId = maybeDocumentId;
+    attachSnapshot();
   }
 
   async function saveAll(snapshot, reason = 'Sync update', options = {}) {
@@ -75,6 +101,7 @@ export const FirebaseReports = (() => {
   return {
     init,
     saveAll,
-    on
+    on,
+    teardown
   };
 })();
