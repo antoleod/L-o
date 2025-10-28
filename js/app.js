@@ -2137,7 +2137,7 @@ function saveManualEntry(){
 }
 
 
-function initFirebaseSync() {
+async function initFirebaseSync() {
   if (!persistenceApi) {
     console.warn("Persistence module not available yet.");
     return;
@@ -2153,6 +2153,10 @@ function initFirebaseSync() {
     firebaseInitialized = true;
     console.log(`Firebase sync initialized for document ${firebaseDocId}`);
 
+    // Esperamos a que lleguen los primeros datos y los renderizamos.
+    const initialData = await persistenceApi.connect();
+    replaceDataFromSnapshot(initialData, { skipRender: false });
+
     persistenceApi.on((event, payload) => {
       if (event === 'data-changed') {
         console.log('Data changed from persistence layer, re-rendering.', payload);
@@ -2163,7 +2167,6 @@ function initFirebaseSync() {
       }
     });
 
-    persistenceApi.connect();
   } catch (error) {
     console.error("Firebase init failed:", error);
     setSaveIndicator('error', SAVE_MESSAGES.error);
@@ -2227,7 +2230,7 @@ async function bootstrap() {
     updateOfflineIndicator();
 
     if (firebaseDocId) {
-      initFirebaseSync();
+      await initFirebaseSync();
     }
   } catch (error) {
     console.error("Failed to bootstrap Firebase or app modules:", error);

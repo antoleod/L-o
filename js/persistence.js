@@ -142,28 +142,32 @@ export const Persistence = {
     reference = doc(firestoreInstance, COLLECTION, documentId);
   },
 
-  async connect() {
-    if (!firestoreInstance || !reference) {
-      throw new Error("Persistence not initialized");
-    }
-    await ensureDocument();
-    if (unsubscribeSnapshot) {
-      unsubscribeSnapshot();
-    }
-    unsubscribeSnapshot = onSnapshot(reference, (snap) => {
-      if (!snap.exists()) {
-        return;
+  connect() {
+    return new Promise(async (resolve, reject) => {
+      if (!firestoreInstance || !reference) {
+        return reject(new Error("Persistence not initialized"));
       }
-      if (snap.metadata.hasPendingWrites) {
-        emit("sync-status", { status: "saving", message: SAVE_MESSAGES.saving });
-        return;
+      await ensureDocument();
+      if (unsubscribeSnapshot) {
+        unsubscribeSnapshot();
       }
-      const data = normalizeSnapshot(snap.data());
-      emit("data-changed", data);
-      emit("sync-status", { status: "synced", message: SAVE_MESSAGES.synced });
-    }, (error) => {
-      console.error("Persistence snapshot error:", error);
-      emit("sync-status", { status: "error", message: SAVE_MESSAGES.error });
+      unsubscribeSnapshot = onSnapshot(reference, (snap) => {
+        if (!snap.exists()) {
+          return;
+        }
+        if (snap.metadata.hasPendingWrites) {
+          emit("sync-status", { status: "saving", message: SAVE_MESSAGES.saving });
+          return;
+        }
+        const data = normalizeSnapshot(snap.data());
+        emit("data-changed", data);
+        emit("sync-status", { status: "synced", message: SAVE_MESSAGES.synced });
+        resolve(data); // Se resuelve con los datos en cada actualización
+      }, (error) => {
+        console.error("Persistence snapshot error:", error);
+        emit("sync-status", { status: "error", message: SAVE_MESSAGES.error });
+        reject(error);
+      });
     });
   },
 
