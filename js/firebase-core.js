@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
-import { getFirestore } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+import { getFirestore, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
 import { getAuth, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-storage.js";
 // import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app-check.js";
@@ -23,18 +23,16 @@ export function loadFirebaseCore() {
 
   firebaseCorePromise = (async () => {
     const app = initializeApp(firebaseConfig);
-
+    // App Check (reCAPTCHA) está desactivado para el desarrollo.
     const appCheck = null;
-    // try {
-    //   appCheck = initializeAppCheck(app, {
-    //     provider: new ReCaptchaV3Provider("6Ld-sA8qAAAAAK2Yw_pGvGg4-gR_p8E2a-gHjK3L"),
-    //     isTokenAutoRefreshEnabled: true
-    //   });
-    // } catch (error) {
-    //   console.warn("App Check initialization skipped:", error);
-    // }
 
     const db = getFirestore(app);
+    try {
+      await enableIndexedDbPersistence(db);
+      console.log("Firebase offline persistence enabled.");
+    } catch (error) {
+      console.error("Error enabling offline persistence:", error);
+    }
     const auth = getAuth(app);
     const storage = getStorage(app);
 

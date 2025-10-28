@@ -284,10 +284,10 @@ const summaryMedEl = $('#summary-med');
 
 // ===== State =====
 const state = {
-  feeds: store.get('feeds', []), // {id,dateISO,source,breastSide,durationSec,amountMl}
-  elims: store.get('elims', []), // {id,dateISO,pee,poop,vomit}
-  meds: store.get('meds', []), // {id,dateISO,name}
-  measurements: store.get('measurements', []) // {id,dateISO,temp,weight,height}
+  feeds: [], // {id,dateISO,source,breastSide,durationSec,amountMl}
+  elims: [], // {id,dateISO,pee,poop,vomit}
+  meds: [], // {id,dateISO,name}
+  measurements: [] // {id,dateISO,temp,weight,height}
 };
 
 function updateState(updater) {
@@ -297,8 +297,9 @@ function updateState(updater) {
   state.meds = newState.meds || [];
   state.measurements = newState.measurements || [];
   
-  // La persistencia ahora es manejada por el módulo de persistencia,
-  // no directamente aquí con store.set() para el estado principal.
+  // La persistencia es manejada por el módulo de persistencia.
+  // No se usa store.set() aquí. Las llamadas a persistenceApi se hacen
+  // en las funciones que guardan/eliminan datos.
 }
 
 const HISTORY_RANGE_KEY = 'historyRange';
@@ -340,7 +341,7 @@ function updateOfflineIndicator(){
   }
 }
 
-function replaceDataFromSnapshot(snapshot, {persistLocal = true, skipRender = false} = {}){
+function replaceDataFromSnapshot(snapshot, {skipRender = false} = {}){
   const data = {
     feeds: [],
     elims: [],
@@ -2154,11 +2155,11 @@ function initFirebaseSync() {
 
     persistenceApi.on((event, payload) => {
       if (event === 'data-changed') {
-        console.log('Data changed from persistence layer:', payload);
+        console.log('Data changed from persistence layer, re-rendering.', payload);
         replaceDataFromSnapshot(payload, { skipRender: false });
         setSaveIndicator('synced', 'Données à jour');
       } else if (event === 'sync-status') {
-        setSaveIndicator(payload, SAVE_MESSAGES[payload]);
+        setSaveIndicator(payload.status, payload.message);
       }
     });
 
@@ -2221,18 +2222,17 @@ async function bootstrap() {
     firebaseAuthUser = user;
     firebaseDocId = user.uid;
 
+    // El resto de la inicialización de la app
+    setSaveIndicator('idle', isOnline() ? SAVE_MESSAGES.idle : SAVE_MESSAGES.offline);
+    updateOfflineIndicator();
+
     if (firebaseDocId) {
       initFirebaseSync();
     }
   } catch (error) {
     console.error("Failed to bootstrap Firebase or app modules:", error);
     setSaveIndicator('error', 'Erreur de chargement');
-    return;
   }
-
-  // El resto de la inicialización de la app
-  setSaveIndicator('idle', isOnline() ? SAVE_MESSAGES.idle : SAVE_MESSAGES.offline);
-  updateOfflineIndicator();
 
   cancelSelectBtn?.addEventListener('click', () => toggleDeleteMode(false));
   deleteSelectedBtn?.addEventListener('click', () => {

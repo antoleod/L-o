@@ -28,6 +28,14 @@ const clone = (value) => {
   return JSON.parse(JSON.stringify(value));
 };
 
+const SAVE_MESSAGES = {
+  idle: 'Prêt',
+  saving: 'Synchronisation…',
+  offline: 'Enregistré localement',
+  error: 'Erreur de synchronisation',
+  synced: 'Sauvegardé dans le cloud'
+};
+
 function baseSnapshot() {
   return {
     feeds: [],
@@ -83,7 +91,7 @@ async function withMutation(mutator, reason = "Update") {
     throw new Error("Persistence not initialized");
   }
 
-  emit("sync-status", "saving");
+  emit("sync-status", { status: "saving", message: SAVE_MESSAGES.saving });
 
   try {
     await runTransaction(firestoreInstance, async (transaction) => {
@@ -100,10 +108,10 @@ async function withMutation(mutator, reason = "Update") {
         }
       }, { merge: true });
     });
-    emit("sync-status", "synced");
+    emit("sync-status", { status: "synced", message: SAVE_MESSAGES.synced });
   } catch (error) {
     console.error("Persistence mutation failed:", error);
-    emit("sync-status", "error");
+    emit("sync-status", { status: "error", message: SAVE_MESSAGES.error });
     throw error;
   }
 }
@@ -147,15 +155,15 @@ export const Persistence = {
         return;
       }
       if (snap.metadata.hasPendingWrites) {
-        emit("sync-status", "saving");
+        emit("sync-status", { status: "saving", message: SAVE_MESSAGES.saving });
         return;
       }
       const data = normalizeSnapshot(snap.data());
       emit("data-changed", data);
-      emit("sync-status", "synced");
+      emit("sync-status", { status: "synced", message: SAVE_MESSAGES.synced });
     }, (error) => {
       console.error("Persistence snapshot error:", error);
-      emit("sync-status", "error");
+      emit("sync-status", { status: "error", message: SAVE_MESSAGES.error });
     });
   },
 

@@ -63,7 +63,7 @@ self.addEventListener('fetch', event => {
       return cache.match(event.request).then(cachedResponse => {
         const fetchPromise = fetch(event.request).then(networkResponse => {
           // Si la respuesta es válida, la guardamos en caché para la próxima vez.
-          if (networkResponse && networkResponse.status === 200) {
+          if (networkResponse && networkResponse.status === 200 && event.request.method === 'GET') {
             cache.put(event.request, networkResponse.clone());
           }
           return networkResponse;
