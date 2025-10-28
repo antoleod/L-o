@@ -39,21 +39,20 @@ self.addEventListener('fetch', event => {
 
   // Estrategia Network-first para peticiones de navegación (HTML)
   if (event.request.mode === 'navigate') {
-    event.respondWith(
-      fetch(event.request)
-        .then(response => {
-          const copy = response.clone();
-          // Solo cachear respuestas válidas
-          if (response && response.status === 200) {
-            caches.open(RUNTIME).then(cache => cache.put(event.request, copy));
-          }
-          return response;
-        })
-        .catch(() => {
-          // Si la red falla, servir index.html desde el caché
-          return caches.match('./index.html');
-        })
-    );
+    event.respondWith((async () => {
+      try {
+        // Primero, intenta obtener la página de la red.
+        const networkResponse = await fetch(event.request);
+        // Si tiene éxito, guárdala en caché y devuélvela.
+        const cache = await caches.open(RUNTIME);
+        cache.put(event.request, networkResponse.clone());
+        return networkResponse;
+      } catch (error) {
+        // Si la red falla, sirve la página principal desde la caché de preinstalación.
+        console.log('Network request failed, serving page from cache.');
+        return await caches.match('./index.html');
+      }
+    })());
     return;
   }
 
