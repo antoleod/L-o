@@ -1229,9 +1229,6 @@ function confirmAndDelete(itemsToDelete) {
         // Ensure UI updates reflect deletions
         renderHistory();
         setSaveIndicator('synced', 'Suppression effectuée');
-        // After deletion, navigate back to index.html as requested
-        // Short delay to let user see confirmation
-        setTimeout(() => { window.location.href = 'index.html'; }, 600);
       } catch (err) {
         console.error('Error deleting entries:', err);
         setSaveIndicator('error', 'Erreur lors de la suppression');
