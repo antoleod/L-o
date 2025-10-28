@@ -218,23 +218,44 @@ export const Persistence = {
           emit('data-changed', { snapshot: data, source: 'server' });
         }
 
-        // Validate shape when we receive server data
-        if (!initialDataResolved && (!fromCache || serverSnapshotSeen)) {
-          const missing = validateSnapshot(data);
-          if (missing.length) {
-            console.warn(`Persistence: server snapshot missing keys: ${missing.join(', ')}`, raw);
-            emit('sync-status', { status: 'error', message: 'Données incomplètes (vérifier docId ou règles Firestore)' });
-            // Still resolve with what we have to allow the app to run, but it's a warning.
-          }
+        // When we receive the first snapshot (cache or server), resolve quickly
+        // so the UI can render. If it's a cached snapshot, we do a background
+        // getDoc to fetch the authoritative server state and emit updates if
+        // it differs. This helps when real-time server snapshots are delayed
+        // or blocked by browser extensions.
+        if (!initialDataResolved) {
           initialDataResolved = true;
           clearServerTimer();
-          // Resolve with normalized data so the app can render.
+          const missing = validateSnapshot(data);
+          if (missing.length) {
+            console.warn(`Persistence: initial snapshot missing keys: ${missing.join(', ')}`, raw);
+            // Emit a visible warning but still resolve so the app can continue.
+            emit('sync-status', { status: 'error', message: 'Données incomplètes (vérifier docId ou règles Firestore)' });
+          }
+          // Resolve with normalized data so the app can render immediately.
           resolve(data);
-          // Also provide the raw document to listeners for debugging/inspection.
-          try {
-            emit('server-raw', { raw, source, docId: documentId });
-          } catch (e) {
-            // non-fatal
+          // Emit a debug copy of what we received from the SDK.
+          try { emit('server-raw', { raw, source, docId: documentId }); } catch (e) {}
+
+          // If this snapshot was served from cache and there are no pending writes,
+          // request the server version in the background and emit updates if it
+          // differs from the cached snapshot.
+          if (fromCache && !hasPending) {
+            (async () => {
+              try {
+                const serverSnap = await getDoc(reference);
+                const rawServer = serverSnap.exists() ? serverSnap.data() : null;
+                const serverData = rawServer ? normalizeSnapshot(rawServer) : baseSnapshot();
+                // If server data differs from what we resolved with, emit an update.
+                if (JSON.stringify(serverData) !== JSON.stringify(data)) {
+                  try { emit('server-raw', { raw: rawServer, source: 'background-get', docId: documentId }); } catch (e) {}
+                  emit('sync-status', { status: 'synced', message: SAVE_MESSAGES.synced });
+                  emit('data-changed', { snapshot: serverData, source: 'server' });
+                }
+              } catch (err) {
+                console.warn('Persistence background getDoc failed:', err);
+              }
+            })();
           }
         }
       };
