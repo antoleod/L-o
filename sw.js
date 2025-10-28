@@ -1,5 +1,5 @@
-const PRECACHE = 'leo-precache-v1';
-const RUNTIME = 'leo-runtime-v1';
+const PRECACHE = 'leo-precache-v2';
+const RUNTIME = 'leo-runtime-v2';
 
 const PRECACHE_URLS = [
   './',
@@ -21,12 +21,13 @@ self.addEventListener('install', event => {
 });
 
 self.addEventListener('activate', event => {
+  // Esto fuerza al SW a tomar control inmediato de la página.
   event.waitUntil(
     caches.keys().then(keys => Promise.all(
       keys
         .filter(key => key !== PRECACHE && key !== RUNTIME)
         .map(key => caches.delete(key))
-    )).then(() => self.clients.claim())
+    )).then(() => self.clients.claim()) // Tomar control de las páginas abiertas.
   );
 });
 

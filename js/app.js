@@ -1205,8 +1205,10 @@ function confirmAndDelete(itemsToDelete) {
     });
 
     if (changed) {
-      persistenceApi?.deleteEntries?.(type, Array.from(ids), `Delete ${itemsToDelete.length} entries`);
-      renderHistory();
+      for (const type in idsByType) {
+        const idsToDelete = Array.from(idsByType[type]);
+        persistenceApi?.deleteEntries?.(type, idsToDelete, `Delete ${idsToDelete.length} ${type}(s)`);
+      }
     }
     toggleDeleteMode(false);
     closeConfirmModal();
