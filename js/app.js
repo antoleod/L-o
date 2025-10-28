@@ -2233,7 +2233,7 @@ async function bootstrap() {
   // Cargar los scripts de Firebase y la configuración
   try {
     await loadScript('./js/firebase_reports.js');
-    await import('./main.js');
+    await import('../main.js');
   } catch (error) {
     console.error("Failed to load Firebase scripts:", error);
     setSaveIndicator('error', 'Erreur de chargement');
