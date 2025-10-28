@@ -2162,32 +2162,30 @@ function saveManualEntry(){
 
 
 async function initFirebaseSync() {
-  if (!persistenceApi) {
-    console.warn("Persistence module not available yet.");
-    return;
-  }
-
   if (!firebaseDbInstance || !firebaseDocId) {
     console.warn("Firebase dependencies not ready.");
+    setSaveIndicator('error', 'Dependencias no listas.');
     return;
   }
 
   try {
     persistenceApi.init(firebaseDbInstance, firebaseDocId);
     firebaseInitialized = true;
-    console.log(`Firebase sync initialized for document ${firebaseDocId}`);
 
     // Esperamos a que lleguen los primeros datos y los renderizamos.
     const initialData = await persistenceApi.connect();
+    console.log(`Firebase sync connected for document ${firebaseDocId}. Initial data received.`);
     replaceDataFromSnapshot(initialData, { skipRender: false });
 
     persistenceApi.on((event, payload) => {
       if (event === 'data-changed') {
-        console.log('Data changed from persistence layer, re-rendering.', payload);
+        // No mostramos el indicador de "synced" en cada cambio local,
+        // solo cuando los datos vienen del servidor.
         replaceDataFromSnapshot(payload, { skipRender: false });
-        setSaveIndicator('synced', 'Données à jour');
       } else if (event === 'sync-status') {
         setSaveIndicator(payload.status, payload.message);
+      } else if (event === 'server-update') {
+        setSaveIndicator('synced', 'Données à jour');
       }
     });
 
@@ -2224,11 +2222,6 @@ function ensureAuthSession(auth, { onAuthStateChanged, signInAnonymously }) {
 
 async function bootstrap() {
   try {
-    // Cargar los módulos de Firebase y nuestro módulo de persistencia
-    const [firebaseCore, persistenceModule] = await Promise.all([
-      loadFirebaseCore(),
-      import('./persistence.js'),
-    ]);
 
     const {
       db,
@@ -2237,10 +2230,10 @@ async function bootstrap() {
       onAuthStateChanged,
       signInAnonymously,
       storageFns
-    } = firebaseCore;
-    const { Persistence } = persistenceModule;
+    } = await loadFirebaseCore();
 
-    persistenceApi = Persistence;
+    const { Persistence } = await import('./persistence.js');
+    persistenceApi = Persistence; // Assign to the global-like variable
     firebaseDbInstance = db;
     firebaseStorageInstance = storage;
     firebaseStorageFns = storageFns;

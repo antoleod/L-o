@@ -166,22 +166,33 @@ export const Persistence = {
           return;
         }
 
+      const handleSnapshot = (snap) => {
         if (snap.metadata.hasPendingWrites) {
           emit("sync-status", { status: "saving", message: SAVE_MESSAGES.saving });
-          // No retornamos, para que la UI se actualice con los cambios locales
+        } else {
+          // Only emit a specific server update event when writes are not local
+          emit("server-update", {});
         }
 
         const data = normalizeSnapshot(snap.data());
+        const data = snap.exists() ? normalizeSnapshot(snap.data()) : baseSnapshot();
         emit("data-changed", data);
-        emit("sync-status", { status: "synced", message: SAVE_MESSAGES.synced });
+
         if (!initialDataResolved) {
+          emit("sync-status", { status: "synced", message: SAVE_MESSAGES.synced });
           resolve(data);
           initialDataResolved = true;
         }
       }, (error) => {
+      };
+
+      unsubscribeSnapshot = onSnapshot(reference, handleSnapshot, (error) => {
         console.error("Persistence snapshot error:", error);
         emit("sync-status", { status: "error", message: SAVE_MESSAGES.error });
         reject(error);
+        if (!initialDataResolved) {
+          reject(error);
+        }
       });
     });
   },
@@ -213,8 +224,10 @@ export const Persistence = {
     }
     await withMutation((snapshot) => {
       snapshot[key] = snapshot[key].filter(
+      const filtered = snapshot[key].filter(
         (item) => item && !idSet.has(String(item.id))
       );
+      snapshot[key] = sortEntries(filtered);
       return snapshot;
     }, reason);
   },

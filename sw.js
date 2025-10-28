@@ -2,16 +2,14 @@ const CACHE_VERSION = 'v3';
 const PRECACHE = `leo-precache-${CACHE_VERSION}`;
 const RUNTIME = `leo-runtime-${CACHE_VERSION}`;
 
-// Lista de recursos esenciales para el funcionamiento offline inicial.
+// Lista de recursos esenciales para el funcionamiento offline inicial (HTML, CSS, JS).
 const PRECACHE_URLS = [
   './',
   './index.html',
   './css/styles.css',
   './js/app.js',
   './js/persistence.js',
-  './js/firebase-core.js',
-  './img/baby.jpg',
-  './img/baby1.jpg'
+  './js/firebase-core.js'
 ];
 
 self.addEventListener('install', event => {
