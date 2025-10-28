@@ -56,27 +56,23 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Estrategia Stale-While-Revalidate para assets principales (CSS, JS)
-  // Sirve desde la caché para velocidad, pero actualiza en segundo plano.
+  // Estrategia Network-first para los assets (JS, CSS, etc.)
+  // Intenta obtener de la red primero para tener siempre el código más reciente.
+  // Si la red falla, recurre a la caché para que la app funcione offline.
   event.respondWith(
     caches.open(RUNTIME).then(cache => {
-      return cache.match(event.request).then(cachedResponse => {
-        const fetchPromise = fetch(event.request).then(networkResponse => {
-          // Si la respuesta es válida, la guardamos en caché para la próxima vez.
+      return fetch(event.request)
+        .then(networkResponse => {
+          // Si la petición a la red es exitosa, la guardamos en caché y la devolvemos.
           if (networkResponse && networkResponse.status === 200 && event.request.method === 'GET') {
             cache.put(event.request, networkResponse.clone());
           }
           return networkResponse;
-        }).catch(() => {
-          // Si la red falla y no hay nada en caché, podría devolverse un fallback.
-          if (event.request.destination === 'image') {
-            return caches.match('./img/baby.jpg');
-          }
+        })
+        .catch(() => {
+          // Si la red falla, intentamos servir desde la caché.
+          return cache.match(event.request);
         });
-
-        // Devuelve la respuesta de la caché inmediatamente si existe, si no, espera a la red.
-        return cachedResponse || fetchPromise;
-      })
     })
   );
 });

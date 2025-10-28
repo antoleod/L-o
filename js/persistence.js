@@ -151,18 +151,33 @@ export const Persistence = {
       if (unsubscribeSnapshot) {
         unsubscribeSnapshot();
       }
+
+      let initialDataResolved = false;
+
       unsubscribeSnapshot = onSnapshot(reference, (snap) => {
         if (!snap.exists()) {
+          if (!initialDataResolved) {
+            const data = baseSnapshot();
+            emit("data-changed", data);
+            emit("sync-status", { status: "synced", message: SAVE_MESSAGES.synced });
+            resolve(data);
+            initialDataResolved = true;
+          }
           return;
         }
+
         if (snap.metadata.hasPendingWrites) {
           emit("sync-status", { status: "saving", message: SAVE_MESSAGES.saving });
-          return;
+          // No retornamos, para que la UI se actualice con los cambios locales
         }
+
         const data = normalizeSnapshot(snap.data());
         emit("data-changed", data);
         emit("sync-status", { status: "synced", message: SAVE_MESSAGES.synced });
-        resolve(data); // Se resuelve con los datos en cada actualización
+        if (!initialDataResolved) {
+          resolve(data);
+          initialDataResolved = true;
+        }
       }, (error) => {
         console.error("Persistence snapshot error:", error);
         emit("sync-status", { status: "error", message: SAVE_MESSAGES.error });
