@@ -2,7 +2,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
 import { getFirestore } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
 import { getAuth, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-storage.js";
-import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app-check.js";
+// import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app-check.js";
 
 export const firebaseConfig = Object.freeze({
   apiKey: "AIzaSyCRvodMEsVaZ0ynCqTTR8quIAAvW445kzE",
@@ -24,15 +24,15 @@ export function loadFirebaseCore() {
   firebaseCorePromise = (async () => {
     const app = initializeApp(firebaseConfig);
 
-    let appCheck = null;
-    try {
-      appCheck = initializeAppCheck(app, {
-        provider: new ReCaptchaV3Provider("6Ld-sA8qAAAAAK2Yw_pGvGg4-gR_p8E2a-gHjK3L"),
-        isTokenAutoRefreshEnabled: true
-      });
-    } catch (error) {
-      console.warn("App Check initialization skipped:", error);
-    }
+    const appCheck = null;
+    // try {
+    //   appCheck = initializeAppCheck(app, {
+    //     provider: new ReCaptchaV3Provider("6Ld-sA8qAAAAAK2Yw_pGvGg4-gR_p8E2a-gHjK3L"),
+    //     isTokenAutoRefreshEnabled: true
+    //   });
+    // } catch (error) {
+    //   console.warn("App Check initialization skipped:", error);
+    // }
 
     const db = getFirestore(app);
     const auth = getAuth(app);
