@@ -358,28 +358,6 @@ export const Persistence = {
     }, reason);
   },
 
-  // Force-fetch the server document now (manual background sync).
-  // Returns the normalized server snapshot.
-  async fetchServerNow() {
-    if (!firestoreInstance || !reference) {
-      throw new Error("Persistence not initialized");
-    }
-    emit('sync-status', { status: 'saving', message: SAVE_MESSAGES.saving });
-    try {
-      const snap = await getDoc(reference);
-      const raw = snap.exists() ? snap.data() : null;
-      const data = raw ? normalizeSnapshot(raw) : baseSnapshot();
-      try { emit('server-raw', { raw, source: 'manual-get', docId: documentId }); } catch (e) {}
-      emit('data-changed', { snapshot: data, source: 'server' });
-      emit('sync-status', { status: 'synced', message: SAVE_MESSAGES.synced });
-      return data;
-    } catch (err) {
-      console.error('Persistence.fetchServerNow failed:', err);
-      emit('sync-status', { status: 'error', message: SAVE_MESSAGES.error });
-      throw err;
-    }
-  },
-
   on(callback) {
     if (typeof callback === "function") {
       listeners.add(callback);

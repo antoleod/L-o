@@ -1,0 +1,21 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // La colección 'babyLogs' contiene los datos de la aplicación.
+    // Cada familia/usuario puede tener su propio documento.
+    match /babyLogs/{logId} {
+
+      // PERMISO DE LECTURA Y ESCRITURA:
+      // Solo permite leer o escribir si el usuario está autenticado.
+      // El archivo `firebase.js` ya incluye el inicio de sesión anónimo,
+      // por lo que esto funcionará automáticamente.
+      // Para mayor seguridad, podrías restringir por `request.auth.uid`.
+      allow read, write: if request.auth != null;
+
+      // TODO: Para una app compartida, podrías añadir una regla como:
+      // allow read, write: if request.auth.uid == resource.data.owner;
+    }
+  }
+}

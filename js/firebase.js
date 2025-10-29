@@ -41,8 +41,13 @@ export function ensureAuth() {
   if (_authReadyPromise) return _authReadyPromise;
   _authReadyPromise = new Promise((resolve) => {
     onAuthStateChanged(auth, (user) => {
-      // resolve when we have a user (could be null if not signed in)
-      resolve(user);
+      if (user) {
+        console.log("Authenticated anonymously with UID:", user.uid);
+        resolve(user);
+      } else {
+        console.log("No user is signed in.");
+        resolve(null);
+      }
     });
   });
   // Try to sign in anonymously; if it fails we still resolve when auth state changes

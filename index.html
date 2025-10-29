@@ -3,11 +3,8 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>App bebé - Léo</title>
-<base href="/L-o/">
+<title>App bebé — Léo</title>
 <link rel="stylesheet" href="css/styles.css" />
-<link rel="icon" href="img/favicon.png" />
-<meta name="theme-color" content="#f7fafd" />
 </head>
 <body>
   <input type="file" id="bg-picker" accept="image/*" style="display:none" />
@@ -380,51 +377,20 @@
     </div>
   </div>
 
-  <!-- Modal CONFIRM DELETE -->
-  <div class="modal" id="modal-confirm-delete" aria-hidden="true">
-    <div class="sheet stack">
-      <div class="row modal-header">
-        <h2 id="confirm-delete-title">Confirmer la suppression</h2>
-        <button class="btn btn-ghost btn-compact" id="close-confirm-delete" type="button" aria-label="Fermer la confirmation">Fermer</button>
-      </div>
-
-      <div class="stack">
-        <p id="confirm-delete-message" class="muted" aria-live="polite"></p>
-        <div class="field">
-          <label for="security-pin">Code de sécurité</label>
-          <input
-            id="security-pin"
-            class="input"
-            type="password"
-            inputmode="numeric"
-            pattern="[0-9]*"
-            maxlength="4"
-            autocomplete="one-time-code"
-          />
-        </div>
-      </div>
-
-      <div class="footer">
-        <button class="btn btn-ghost" id="cancel-confirm-delete" type="button">Annuler</button>
-        <button class="btn btn-primary" id="confirm-delete-btn" type="button">Supprimer</button>
-      </div>
-    </div>
-  </div>
-
   <!-- Template para los elementos del historial -->
   <template id="history-item-template">
-    <div class="item enter history-item">
+    <div class="item history-item" role="listitem">
+      <input type="checkbox" class="history-item-checkbox" aria-label="Sélectionner cet élément">
       <div class="item-content">
-        <input type="checkbox" class="history-item-checkbox" aria-label="Sélectionner cet élément">
         <strong class="item-title"></strong>
         <div class="item-meta"></div>
       </div>
       <div class="item-actions">
-        <button class="item-action item-edit" aria-label="Modifier l'entrée">
-          <span>&#9998;</span>
+        <button class="item-action item-edit" type="button" aria-label="Modifier l'élément">
+          <span>✏️</span>
         </button>
-        <button class="item-delete" aria-label="Supprimer l'entrée">
-          <span>×</span>
+        <button class="item-action item-delete" type="button" aria-label="Supprimer l'élément">
+          <span>🗑️</span>
         </button>
       </div>
     </div>

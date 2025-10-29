@@ -271,10 +271,6 @@ const manualMesureTemp = $('#manual-mesure-temp');
 const manualMesurePoids = $('#manual-mesure-poids');
 const manualMesureTaille = $('#manual-mesure-taille');
 
-// Handlers for the history range menu (declared here to avoid reference errors)
-let historyMenuOutsideHandler = null;
-let historyMenuKeydownHandler = null;
-
 const SAVE_MESSAGES = {
   idle: 'Prêt',
   saving: 'Synchronisation…',
@@ -344,8 +340,6 @@ function updateOfflineIndicator(){
   }else if(!offline && saveIndicatorEl.dataset.state === 'idle' && saveLabelEl && saveLabelEl.textContent === SAVE_MESSAGES.offline){
     setSaveIndicator('idle', SAVE_MESSAGES.idle);
   }
-  // update the visual sync badge as well
-  try{ updateSyncStatus && updateSyncStatus({ online: !offline }); }catch(e){/* ignore */}
 }
 
 function replaceDataFromSnapshot(snapshot, {skipRender = false} = {}){
@@ -1188,7 +1182,7 @@ function confirmAndDelete(itemsToDelete) {
 
   const closeConfirmModal = () => closeModal('#modal-confirm-delete');
 
-  const onConfirm = async () => {
+  const onConfirm = () => {
     if (pinInput.value !== '2410') {
       alert('Code de sécurité incorrect.');
       pinInput.value = '';
@@ -1216,25 +1210,10 @@ function confirmAndDelete(itemsToDelete) {
     });
 
     if (changed) {
-      const api = getPersistenceApi();
-      const promises = [];
       for (const type in idsByType) {
         const idsToDelete = Array.from(idsByType[type]);
-        if (api && typeof api.deleteEntries === 'function') {
-          promises.push(api.deleteEntries(type, idsToDelete, `Delete ${idsToDelete.length} ${type}(s)`));
-        }
-      }
-      try {
-        await Promise.all(promises);
-        // Ensure UI updates reflect deletions
-        renderHistory();
-        setSaveIndicator('synced', 'Suppression effectuée');
-        // After deletion, navigate back to index.html as requested
-        // Short delay to let user see confirmation
-        setTimeout(() => { window.location.href = 'index.html'; }, 600);
-      } catch (err) {
-        console.error('Error deleting entries:', err);
-        setSaveIndicator('error', 'Erreur lors de la suppression');
+        const api = getPersistenceApi();
+        api?.deleteEntries?.(type, idsToDelete, `Delete ${idsToDelete.length} ${type}(s)`);
       }
     }
     toggleDeleteMode(false);
@@ -1273,53 +1252,6 @@ function setSaveIndicator(status = 'idle', message){
       }
     }, 4000);
   }
-}
-
-/* Sync status badge: create and update a small persistent badge in the UI */
-function createSyncStatusBadge(){
-  if(document.getElementById('sync-status')) return;
-  const badge = document.createElement('div');
-  badge.id = 'sync-status';
-  badge.className = isOnline() ? 'online' : 'offline';
-  badge.innerHTML = `
-    <span class="dot" aria-hidden="true"></span>
-    <span>
-      <span class="status-text">${isOnline() ? 'En ligne' : 'Hors ligne'}</span>
-      <span class="sync-meta" id="sync-meta">Dernière: —</span>
-    </span>
-  `;
-  document.body.appendChild(badge);
-}
-
-function updateSyncStatus({online = null, state = null, lastSync = null, message = null} = {}){
-  const badge = document.getElementById('sync-status');
-  if(!badge) return;
-  try{
-    if(typeof online === 'boolean'){
-      badge.classList.toggle('online', online);
-      badge.classList.toggle('offline', !online);
-      const st = badge.querySelector('.status-text');
-      if(st) st.textContent = online ? 'En ligne' : 'Hors ligne';
-    }
-    if(state){
-      badge.classList.remove('syncing','error');
-      badge.classList.add(state);
-      const st = badge.querySelector('.status-text');
-      if(st){
-        if(state === 'syncing') st.textContent = 'Synchronisation...';
-        else if(state === 'error') st.textContent = 'Erreur';
-      }
-    }
-    if(lastSync){
-      const meta = badge.querySelector('#sync-meta');
-      if(meta){
-        const d = new Date(lastSync);
-        meta.textContent = `Dernière: ${d.toLocaleTimeString()}`;
-      }
-    }else if(message){
-      const meta = badge.querySelector('#sync-meta'); if(meta) meta.textContent = message;
-    }
-  }catch(e){console.debug('updateSyncStatus error', e)}
 }
 
 function exportReports(){
@@ -2280,17 +2212,14 @@ async function initFirebaseSync() {
     } catch (e) {
       console.debug('Could not summarize initialData', e);
     }
-  replaceDataFromSnapshot(initialData, { skipRender: false });
+    replaceDataFromSnapshot(initialData, { skipRender: false });
 
-  // Create and initialize the sync status badge
-  try{ createSyncStatusBadge(); updateSyncStatus({ online: isOnline(), state: 'synced', lastSync: new Date().toISOString() }); }catch(e){/* ignore */}
-
-  persistenceApi.on((event, payload) => {
+    persistenceApi.on((event, payload) => {
       // Ahora, cualquier 'data-changed' se trata como la fuente de la verdad.
       // La lógica de fusión compleja ya no es necesaria en el cliente.
       if (event === 'data-changed') {
         replaceDataFromSnapshot(payload.snapshot, { skipRender: false });
-  } else if (event === 'server-raw') {
+      } else if (event === 'server-raw') {
         // Debug: server gave us a raw document; log a compact summary so developer can compare
         try {
           const raw = payload && payload.raw ? payload.raw : null;
@@ -2316,59 +2245,10 @@ async function initFirebaseSync() {
         }
       } else if (event === 'sync-status') {
         setSaveIndicator(payload.status, payload.message);
-        try{ updateSyncStatus({ state: payload.status, message: payload.message, online: isOnline(), lastSync: payload.lastSync || new Date().toISOString() }); }catch(e){}
       } else if (event === 'server-update') {
         setSaveIndicator('synced', 'Données à jour');
-        try{ updateSyncStatus({ state: 'synced', lastSync: new Date().toISOString(), online: isOnline() }); }catch(e){}
       }
     });
-
-    // Create a small floating button to force a background sync (manual getDoc)
-    function createForceSyncButton(){
-      if(document.getElementById('btn-force-sync')) return;
-      const btn = document.createElement('button');
-      btn.id = 'btn-force-sync';
-      btn.title = 'Forzar sincronización';
-      btn.textContent = 'Sync';
-      Object.assign(btn.style, {
-        position: 'fixed',
-        right: '12px',
-        bottom: '12px',
-        zIndex: 9999,
-        padding: '8px 10px',
-        background: '#2563eb',
-        color: '#fff',
-        border: 'none',
-        borderRadius: '6px',
-        boxShadow: '0 2px 6px rgba(0,0,0,0.2)',
-        cursor: 'pointer'
-      });
-      btn.addEventListener('click', async () => {
-        if (!persistenceApi || typeof persistenceApi.fetchServerNow !== 'function') {
-          setSaveIndicator('error', 'API no disponible');
-          return;
-        }
-        try {
-          setSaveIndicator('saving', 'Forzando sincronización...');
-          updateSyncStatus({ state: 'syncing', online: isOnline() });
-          await persistenceApi.fetchServerNow();
-          const now = new Date().toISOString();
-          setSaveIndicator('synced', 'Sincronización completa');
-          updateSyncStatus({ state: 'synced', lastSync: now, online: isOnline() });
-          setTimeout(() => {
-            if (saveIndicatorEl && saveIndicatorEl.dataset.state === 'synced') setSaveIndicator('idle');
-          }, 2000);
-        } catch (err) {
-          console.error('Force sync failed:', err);
-          setSaveIndicator('error', 'Error sincronizando');
-          try{ updateSyncStatus({ state: 'error', online: isOnline(), message: 'Error sync' }); }catch(e){}
-        }
-      });
-      document.body.appendChild(btn);
-    }
-
-    // Add the button so the developer/user can trigger a background sync on demand
-    try { createForceSyncButton(); } catch (e) { console.debug('Could not create force-sync button', e); }
 
   } catch (error) {
     console.error("Firebase init failed:", error);
